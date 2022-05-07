@@ -1,0 +1,7 @@
+struct SaslNegotiator {
+
+}
+
+impl SaslNegotiator {
+
+}

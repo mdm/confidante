@@ -1,7 +1,7 @@
-mod client_session;
-mod xml_stream_codec;
+mod inbound_session;
+mod xml_stream_parser;
 
-use client_session::ClientSession;
+use inbound_session::InboundSession;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -13,7 +13,7 @@ async fn main() -> Result<(), Error> {
         let (socket, _) = listener.accept().await?;
 
         tokio::spawn(async move {
-            let mut session = ClientSession::from_socket(socket);
+            let mut session = InboundSession::from_socket(socket);
             session.handle().await;
         });
     }
