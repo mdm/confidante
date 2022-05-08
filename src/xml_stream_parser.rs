@@ -2,7 +2,6 @@ use bytes::BytesMut;
 use rustyxml::{Element, ElementBuilder, Event, Parser, StartTag};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use tokio_util::codec::Decoder;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 

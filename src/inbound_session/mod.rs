@@ -1,27 +1,36 @@
-use futures::StreamExt;
+mod connection;
+mod sasl;
+
 use rand::{RngCore, SeedableRng};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
-use tokio_util::codec::{Decoder, Framed};
 
+use crate::settings::Settings;
 use crate::xml_stream_parser::{XmlFrame, XmlStreamParser};
+
+use connection::Connection;
+use self::sasl::SaslNegotiator;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
 pub struct InboundSession {
-    socket: TcpStream,
+    connection: Connection,
     parser: XmlStreamParser,
+    sasl: SaslNegotiator,
+    settings: Settings,
 }
 
 impl InboundSession {
-    pub fn from_socket(socket: TcpStream) -> Self {
+    pub fn from_socket(socket: TcpStream, settings: Settings) -> Self {
+        let connection = Connection::from_socket(socket);
         let parser = XmlStreamParser::new();
+        let sasl = SaslNegotiator::new();
 
-        Self { socket, parser }
+        Self { connection, parser, sasl, settings }
     }
 
     pub async fn handle(&mut self) {
         loop {
-            match self.parser.next_frame(&mut self.socket).await {
+            match self.parser.next_frame(&mut self.connection.socket()).await {
                 Ok(Some(XmlFrame::StreamStart(initial_stream_header))) => {
                     if let Some(to) = initial_stream_header.attributes.get(&("to".into(), None)) {
                         if let Err(_err) = self.send_stream_header(to, true).await {
@@ -33,8 +42,9 @@ impl InboundSession {
                         }
                     }
                 }
-                Ok(Some(frame)) => {
-                    dbg!(frame);
+                Ok(Some(XmlFrame::XmlFragment(fragment))) => {
+                    dbg!(&fragment);
+                    println!("{}", &fragment);
                 }
                 _ => break,
             }
@@ -47,7 +57,7 @@ impl InboundSession {
         include_declaration: bool,
     ) -> Result<(), Error> {
         if include_declaration {
-            self.socket
+            self.connection.socket()
                 .write_all("<?xml version='1.0'?>".as_bytes())
                 .await?;
         }
@@ -69,20 +79,15 @@ impl InboundSession {
             from, id_encoded
         );
 
-        self.socket.write_all(stream_header.as_bytes()).await?;
+        self.connection.socket().write_all(stream_header.as_bytes()).await?;
         Ok(())
     }
 
     async fn send_features(&mut self) -> Result<(), Error> {
-        let features = r#"<stream:features>
-    <mechanisms xmlns="urn:ietf:params:xml:ns:xmpp-sasl">
-        <mechanism>SCRAM-SHA-1</mechanism>
-        <mechanism>PLAIN</mechanism>
-    </mechanisms>
-</stream:features>
-"#;
-
-        self.socket.write_all(features.as_bytes()).await?;
+        self.connection.socket().write_all("<stream:features>\n".as_bytes()).await?;
+        self.sasl.advertise_feature(&mut self.connection, &self.settings).await?;
+        self.connection.socket().write_all("</stream:features>\n".as_bytes()).await?;
+        
         Ok(())
     }
 }
