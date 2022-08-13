@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+anyhow = "1.0.60"
 base64 = "0.13.0"
 bytes = "1.1.0"
 config = { version = "0.13.1", features = ["yaml"] }
@@ -15,4 +16,5 @@ rand_chacha = "0.3.1"
 rustyxml = { package = "RustyXML", version = "0.3.0" }
 sasl = "0.5.0"
 serde = { version = "1.0.137", features = ["derive"] }
+thiserror = "1.0.32"
 tokio = { version = "1.18.1", features = ["full"] }

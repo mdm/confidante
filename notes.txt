@@ -1,3 +1,8 @@
 <auth xmlns='urn:ietf:params:xml:ns:xmpp-sasl' mechanism='SCRAM-SHA-1'>biwsbj10ZXN0LHI9ZGY2ODE2MTZhMDc3OWUxMzRmZWFlYzMyZTI0NGE2ZThlZmRjM2Y0MmQwZjVlMWUw</auth>
 
 n,,n=test,r=df681616a0779e134feaec32e244a6e8efdc3f42d0f5e1e0
+
+* Implement SASL Providers
+* call `resp = sm.respond(&msg)?;` on `ServerMechanism`
+
+* Allow fetching next XML frame from inside methods like SaslNegotiator::respond() to avoid having to track current state manually

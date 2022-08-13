@@ -1,15 +1,38 @@
+use anyhow::{bail, Error};
 use bytes::{BytesMut, BufMut};
+use rustyxml::Element;
+use sasl::client::mechanisms;
 use tokio::io::AsyncWriteExt;
 
 use crate::settings::Settings;
 use super::connection::{Connection, Security};
-use super::Error;
 
 enum Mechanism {
     External,
     Plain,
     ScramSha1,
     ScramSha1Plus,    
+}
+
+impl TryFrom<&str> for Mechanism {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "EXTERNAL" => Ok(Mechanism::External),
+            "PLAIN" => Ok(Mechanism::Plain),
+            "SCRAM-SHA-1" => Ok(Mechanism::ScramSha1),
+            "SCRAM-SHA-1-PLUS" => Ok(Mechanism::ScramSha1Plus),
+            _ => bail!(SaslError::UnsupportedMechanism(value.into())),
+        }
+    }
+}
+
+
+#[derive(thiserror::Error, Debug)]
+pub enum SaslError {
+    #[error("the SASL mechanism `{0}` is not supported")]
+    UnsupportedMechanism(String),
 }
 
 pub struct SaslNegotiator {
@@ -51,6 +74,19 @@ impl SaslNegotiator {
         }
 
         Ok(())
+    }
+
+    pub async fn respond(&mut self, connection: &mut Connection, settings: &Settings, fragment: Element) -> Result<bool, Error> {
+        if fragment.name == "auth" {
+            let mechanism = fragment.get_attribute("mechanism", None);
+            let mechanism = match mechanism {
+                Some(mechanism) => Mechanism::try_from(mechanism)?,
+                None => bail!("auth element is missing mechanism attribute"),
+            };
+            self.mechanism = Some(mechanism);
+        }
+
+        Ok(true)
     }
 
     fn mechanism_available(&self, mechanism: Mechanism, connection: &mut Connection, settings: &Settings) -> bool {
