@@ -1,9 +1,8 @@
+use anyhow::{anyhow, Error};
 use bytes::BytesMut;
 use rustyxml::{Element, ElementBuilder, Event, Parser, StartTag};
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-
-type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Debug)]
 pub enum XmlFrame {
@@ -58,7 +57,7 @@ impl XmlStreamParser {
                     Err(err) => {
                         // TODO: detect incomplete parses? or are those not even returned by the iterator?
                         dbg!("parser error");
-                        return Err(Box::new(err));
+                        return Err(anyhow!(err));
                     }
                     _ => {}
                 }
@@ -66,7 +65,7 @@ impl XmlStreamParser {
                 if let Some(builder_result) = self.element_builder.handle_event(parser_result) {
                     return match builder_result {
                         Ok(element) => Ok(Some(XmlFrame::XmlFragment(element))),
-                        Err(err) => Err(Box::new(err)),
+                        Err(err) => Err(anyhow!(err)),
                     }
                 }
             }
@@ -83,7 +82,7 @@ impl XmlStreamParser {
                 }
                 Err(err) => {
                     dbg!("utf8 error");
-                    return Err(Box::new(err));
+                    return Err(anyhow!(err));
                 }
             }
         }

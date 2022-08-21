@@ -6,3 +6,23 @@ n,,n=test,r=df681616a0779e134feaec32e244a6e8efdc3f42d0f5e1e0
 * call `resp = sm.respond(&msg)?;` on `ServerMechanism`
 
 * Allow fetching next XML frame from inside methods like SaslNegotiator::respond() to avoid having to track current state manually
+
+
+Next steps:
+* Session data from proof token
+
+
+Refactorings:
+* Prevent Connection from being created or used outside of a session context
+* Avoid having to call as_bytes() when sending character data
+
+Next epics:
+* SASL
+* TLS
+* Resource binding
+* Tracing
+* Error handling
+* Tests
+* Stanza processing/delivery
+* Server-to-server inbound
+* Server-to-server outbound

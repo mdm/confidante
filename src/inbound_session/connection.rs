@@ -16,7 +16,6 @@ pub struct Connection {
     socket: TcpStream,
     initiator_type: InitiatorType,
     security: Security,
-    authenticated: bool,
 }
 
 impl Connection {
@@ -25,7 +24,6 @@ impl Connection {
             socket,
             initiator_type: InitiatorType::Unknown,
             security: Security::None,
-            authenticated: false,
         }
     }
 

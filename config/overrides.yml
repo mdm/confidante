@@ -1,2 +1,2 @@
-require_tls:
-  client: false
+tls:
+  required_for_clients: false

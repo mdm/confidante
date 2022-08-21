@@ -16,9 +16,16 @@ async fn main() -> Result<(), Error> {
         let (socket, _) = listener.accept().await?;
         let settings = settings.clone();
 
+        // TODO: handle shutdown
+
         tokio::spawn(async move {
             let mut session = InboundSession::from_socket(socket, settings);
-            session.handle().await;
+
+            if let Err(err) = session.handle().await {
+                session.handle_unrecoverable_error(err).await;
+            }
+
+            session.close_stream().await;
         });
     }
 
