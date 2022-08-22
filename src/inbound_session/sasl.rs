@@ -126,7 +126,7 @@ impl SaslNegotiator {
             None => bail!("auth element is missing mechanism attribute"),
         };
 
-        let mut sasl = SASL::new().map_err(|err| anyhow!(err))?;
+        let mut sasl = SASL::new_untyped().map_err(|err| anyhow!(err))?;
         sasl.install_callback::<GsaslCallback>();
 
 
