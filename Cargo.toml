@@ -13,8 +13,8 @@ config = { version = "0.13.1", features = ["yaml"] }
 futures = "0.3.19"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+rsasl = "1.4.2"
 rustyxml = { package = "RustyXML", version = "0.3.0" }
-sasl = "0.5.0"
 serde = { version = "1.0.137", features = ["derive"] }
 thiserror = "1.0.32"
 tokio = { version = "1.18.1", features = ["full"] }
