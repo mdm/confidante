@@ -10,11 +10,13 @@ anyhow = "1.0.60"
 base64 = "0.13.0"
 bytes = "1.1.0"
 config = { version = "0.13.1", features = ["yaml"] }
+digest = "0.10.3"
 futures = "0.3.19"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+rsasl = { version = "2.0.0-preview10", features = ["provider"] }
 rustyxml = { package = "RustyXML", version = "0.3.0" }
-sasl = "0.5.0"
+sha1 = "0.10.1"
 serde = { version = "1.0.137", features = ["derive"] }
 thiserror = "1.0.32"
 tokio = { version = "1.18.1", features = ["full"] }

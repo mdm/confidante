@@ -4,7 +4,7 @@ mod sasl;
 mod session;
 mod tls;
 
-use anyhow::Error;
+use anyhow::{bail, Error};
 use tokio::net::TcpStream;
 
 use crate::settings::Settings;
@@ -49,7 +49,7 @@ impl InboundSession {
                         self.sasl.advertise_feature(&mut self.session).await?;
                         self.session.write_bytes("</stream:features>\n".as_bytes()).await?;
                         let authenticated_entity = self.sasl.authenticate(&mut self.session).await?;
-                        dbg!("after auth");
+                        dbg!(&authenticated_entity);
                         self.state = InboundSessionState::Authenticated(authenticated_entity);
                     }
                 }
@@ -60,7 +60,7 @@ impl InboundSession {
                     dbg!(entity);
                     let next_frame = self.session.read_frame().await?;
                     dbg!(next_frame);
-                    break;                    
+                    bail!("resource binding not implemented");
                 }
                 InboundSessionState::Bound(resource) => {
                     todo!();

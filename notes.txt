@@ -9,8 +9,7 @@ n,,n=test,r=df681616a0779e134feaec32e244a6e8efdc3f42d0f5e1e0
 
 
 Next steps:
-* Session data from proof token
-
+* Resource binding
 
 Refactorings:
 * Prevent Connection from being created or used outside of a session context
@@ -18,8 +17,8 @@ Refactorings:
 
 Next epics:
 * SASL
-* TLS
 * Resource binding
+* TLS
 * Tracing
 * Error handling
 * Tests
