@@ -57,8 +57,8 @@ struct SaslCallback {
 impl SessionCallback for SaslCallback {
     fn callback(
         &self,
-        session_data: &SessionData,
-        context: &Context,
+        _session_data: &SessionData,
+        _context: &Context,
         request: &mut Request<'_>,
     ) -> Result<(), SessionError> {
         request.satisfy::<ScramStoredPassword>(&ScramStoredPassword {
@@ -69,26 +69,17 @@ impl SessionCallback for SaslCallback {
         })?;
         request.satisfy::<Password>(b"password")?;
 
-        dbg!("callback!");
-
-        let authid = context
-        .get_ref::<AuthId>();
-
-        dbg!(authid);
-
         Ok(())
     }
 
     fn validate(
         &self,
-        session_data: &SessionData,
+        _session_data: &SessionData,
         context: &Context,
         validate: &mut Validate<'_>,
     ) -> Result<(), ValidationError> {
         let authid = context
             .get_ref::<AuthId>();
-
-        dbg!(authid);
 
         validate.with::<SaslValidation, _>(|| {
             match authid {
@@ -163,10 +154,13 @@ impl SaslNegotiator {
             None => bail!("auth element is missing mechanism attribute"),
         };
 
+        // TODO: verify mechanism is available
+
         let plain_password = b"password";
         let salt = b"bad salt";
         let mut salted_password = GenericArray::default();
         // Derive the PBKDF2 key from the password and salt. This is the expensive part
+        // TODO: do we need to off-load this to a separate thread? bechnmark!
         scram::tools::hash_password::<Sha1>(plain_password, 4096, &salt[..], &mut salted_password);
         let (client_key, server_key) = scram::tools::derive_keys::<Sha1>(salted_password.as_slice());
         let stored_key = Sha1::digest(&client_key);
@@ -184,7 +178,6 @@ impl SaslNegotiator {
         };
 
         let mut client_response = base64::decode(fragment.content_str())?;
-        dbg!(String::from_utf8(client_response.clone())?);
         let mut server_challenge_or_success = BytesMut::new();
 
         let mut do_last_step = false;
@@ -207,10 +200,8 @@ impl SaslNegotiator {
                         challenge
                             .put("<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>".as_bytes());
                         let encoded = base64::encode(&out.into_inner()[..len]);
-                        dbg!(String::from_utf8(base64::decode(&encoded)?)?);
                         challenge.put(encoded.as_bytes());
                         challenge.put("</challenge>".as_bytes());
-                        dbg!("challenge sent");
                         server_challenge_or_success = challenge;
                     }
                     (State::Running, None) => {
@@ -223,10 +214,8 @@ impl SaslNegotiator {
                         success
                             .put("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>".as_bytes());
                         let encoded = base64::encode(&out.into_inner()[..len]);
-                        dbg!(String::from_utf8(base64::decode(&encoded)?)?);
                         success.put(encoded.as_bytes());
                         success.put("</success>".as_bytes());
-                        dbg!("success sent (with data)");
                         server_challenge_or_success = success;
                         done = true;
                     }
@@ -236,7 +225,6 @@ impl SaslNegotiator {
                         let mut success = BytesMut::new();
                         success
                             .put("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl' />".as_bytes());
-                        dbg!("success sent (without data)");
                         server_challenge_or_success = success;
                         done = true;
                     }
@@ -264,14 +252,9 @@ impl SaslNegotiator {
             client_response = base64::decode(fragment.content_str())?;
         }
 
-        dbg!("after loop");
-
         match sasl_session.validation() {
             Some(Ok(entity)) => Ok(AuthenticatedEntity(entity, ())),
-            other => {
-                dbg!(other);
-                Err(anyhow!("validation failed"))
-            }
+            _ => Err(anyhow!("validation failed")),
         }
     }
 
