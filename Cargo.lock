@@ -117,11 +117,13 @@ dependencies = [
  "base64",
  "bytes",
  "config",
+ "digest 0.10.3",
  "futures",
  "rand",
  "rand_chacha",
  "rsasl",
  "serde",
+ "sha1",
  "thiserror",
  "tokio",
 ]
@@ -677,9 +679,9 @@ dependencies = [
 
 [[package]]
 name = "rsasl"
-version = "2.0.0-preview9"
+version = "2.0.0-preview10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3400cc81495acfb68cc89485233166e38d832d9bfede1c47662bf9b1c79096e"
+checksum = "38c55e95bb6174a7e2b47fc6fcc2cae0979724a3361080c0d6a2a2bb88e6b62e"
 dependencies = [
  "base64",
  "digest 0.10.3",
@@ -763,6 +765,17 @@ name = "sha-1"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "028f48d513f9678cda28f6e4064755b3fbb2af6acd672f2c209b62323f7aea0f"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest 0.10.3",
+]
+
+[[package]]
+name = "sha1"
+version = "0.10.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c77f4e7f65455545c2153c1253d25056825e77ee2533f0e41deb65a93a34852f"
 dependencies = [
  "cfg-if",
  "cpufeatures",
