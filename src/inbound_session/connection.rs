@@ -14,7 +14,7 @@ enum InitiatorType {
 
 pub struct Connection {
     socket: TcpStream,
-    initiator_type: InitiatorType,
+    initiator_type: InitiatorType, // TODO: use two separate types implementing a Connection trait instead
     security: Security,
 }
 
