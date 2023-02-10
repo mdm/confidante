@@ -7,7 +7,7 @@ mod tls;
 use anyhow::{bail, Error};
 use tokio::net::TcpStream;
 
-use crate::settings::Settings;
+use crate::{settings::Settings, inbound_session::bind::ResourceBindingNegotiator};
 
 use bind::BoundResource;
 use self::sasl::{AuthenticatedEntity, SaslNegotiator};
@@ -21,18 +21,16 @@ enum InboundSessionState {
 }
 
 pub struct InboundSession {
-    sasl: SaslNegotiator,
     session: Session,
     state: InboundSessionState,
 }
 
 impl InboundSession {
     pub fn from_socket(socket: TcpStream, settings: Settings) -> Self {
-        let sasl = SaslNegotiator::new();
         let session = Session::from_socket(socket, settings);
         let state = InboundSessionState::Connected;
 
-        Self { sasl, session, state }
+        Self { session, state }
     }
 
     pub async fn handle(&mut self) -> Result<(), Error> {
@@ -45,10 +43,12 @@ impl InboundSession {
                     if self.session.settings.tls.required_for_clients {
                         todo!();
                     } else {
+                        let sasl = SaslNegotiator::new();
                         self.session.write_bytes("<stream:features>\n".as_bytes()).await?;
-                        self.sasl.advertise_feature(&mut self.session).await?;
+                        sasl.advertise_feature(&mut self.session).await?;
+                        // TODO: advertise voluntary-to-negotiate features
                         self.session.write_bytes("</stream:features>\n".as_bytes()).await?;
-                        let authenticated_entity = self.sasl.authenticate(&mut self.session).await?;
+                        let authenticated_entity = sasl.authenticate(&mut self.session).await?;
                         dbg!(&authenticated_entity);
                         self.state = InboundSessionState::Authenticated(authenticated_entity);
                     }
@@ -57,13 +57,22 @@ impl InboundSession {
                     todo!();
                 }
                 InboundSessionState::Authenticated(entity) => {
-                    dbg!(entity);
-                    let next_frame = self.session.read_frame().await?;
-                    dbg!(next_frame);
-                    bail!("resource binding not implemented");
+                    let to = self.session.receive_stream_header().await?;
+                    self.session.send_stream_header(&to, true).await?;
+
+                    let bind = ResourceBindingNegotiator::new();
+                    self.session.write_bytes("<stream:features>\n".as_bytes()).await?;
+                    bind.advertise_feature(&mut self.session).await?;
+                    // TODO: advertise voluntary-to-negotiate features
+                    self.session.write_bytes("</stream:features>\n".as_bytes()).await?;
+                    let bound_resource = bind.bind_resource(entity, &mut self.session).await?;
+                    dbg!(&bound_resource);
+                    self.state = InboundSessionState::Bound(bound_resource);
                 }
                 InboundSessionState::Bound(resource) => {
-                    todo!();
+                    dbg!(resource);
+                    let next_frame = self.session.read_frame().await?;
+                    dbg!(next_frame);
                 }
             }
         }

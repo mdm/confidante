@@ -78,6 +78,7 @@ impl XmlStreamParser {
 
             match std::str::from_utf8(&buffer.split_to(bytes_read)) {
                 Ok(str) => {
+                    println!("{}", str);
                     self.parser.feed_str(str);
                 }
                 Err(err) => {

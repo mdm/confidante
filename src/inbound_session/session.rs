@@ -29,7 +29,7 @@ impl Session {
                 match stream_header.attributes.get(&("xmlns".into(), None)) {
                     Some(xmlns) => match xmlns.as_str() {
                         "jabber:client" => {
-                            self.connection.set_client_connection();
+                            self.connection.set_client_connection(); // TODO: how can this case be handled with separate connection types for server and client connections?
                         }
                         _ => todo!(),
                     }
@@ -80,6 +80,7 @@ impl Session {
     }
 
     pub async fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
+        print!("{}", String::from_utf8(bytes.to_vec()).unwrap());
         self.connection.socket().write_all(bytes).await.map_err(|err| anyhow!(err))
     }
 

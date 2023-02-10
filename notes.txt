@@ -9,6 +9,7 @@ n,,n=test,r=df681616a0779e134feaec32e244a6e8efdc3f42d0f5e1e0
 
 
 Next steps:
+* Handle stream close gracefully
 * Resource binding
 
 Refactorings:
@@ -25,3 +26,4 @@ Next epics:
 * Stanza processing/delivery
 * Server-to-server inbound
 * Server-to-server outbound
+* Rate-limits and timeouts, liveness detection
