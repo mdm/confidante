@@ -1,5 +1,3 @@
-use std::fmt::format;
-
 use anyhow::{Error, bail};
 
 use crate::xml_stream_parser::XmlFrame;
