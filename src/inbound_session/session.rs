@@ -6,18 +6,17 @@ use tokio::{io::AsyncWriteExt, net::TcpStream};
 use crate::settings::Settings;
 use crate::xml_stream_parser::{XmlFrame, XmlStreamParser};
 
-use super::connection::Connection;
 use super::tls::TlsToken;
 
 pub struct Session {
     pub settings: Settings,
-    pub connection: Connection, // TODO: Refactor to make this private again
+    pub connection: TcpStream, // TODO: Refactor to make this private again
     parser: XmlStreamParser,
 }
 
 impl Session {
     pub fn from_socket(socket: TcpStream, settings: Settings) -> Self {
-        let connection = Connection::from_socket(socket);
+        let connection = socket;
         let parser = XmlStreamParser::new();
 
         Self { connection, parser, settings }
@@ -29,7 +28,8 @@ impl Session {
                 match stream_header.attributes.get(&("xmlns".into(), None)) {
                     Some(xmlns) => match xmlns.as_str() {
                         "jabber:client" => {
-                            self.connection.set_client_connection(); // TODO: how can this case be handled with separate connection types for server and client connections?
+                            // TODO: set marker for client connection
+                            // self.connection.set_client_connection(); // TODO: how can this case be handled with separate connection types for server and client connections?
                         }
                         _ => todo!(),
                     }
@@ -76,16 +76,16 @@ impl Session {
     }
 
     pub async fn read_frame(&mut self) -> Result<Option<XmlFrame>, Error> {
-        self.parser.next_frame(&mut self.connection.socket()).await
+        self.parser.next_frame(&mut self.connection).await
     }
 
     pub async fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
         print!("{}", String::from_utf8(bytes.to_vec()).unwrap());
-        self.connection.socket().write_all(bytes).await.map_err(|err| anyhow!(err))
+        self.connection.write_all(bytes).await.map_err(|err| anyhow!(err))
     }
 
     pub async fn write_buffer(&mut self, buffer: &mut impl Buf) -> Result<(), Error> {
-        self.connection.socket().write_all_buf(buffer).await.map_err(|err| anyhow!(err))
+        self.connection.write_all_buf(buffer).await.map_err(|err| anyhow!(err))
     }
 
     pub fn set_secure(&mut self, token: TlsToken) {

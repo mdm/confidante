@@ -16,7 +16,6 @@ use sha1::Sha1;
 
 use crate::xml_stream_parser::XmlFrame;
 
-use super::connection::Security;
 use super::session::Session;
 
 #[derive(Debug)]
@@ -259,24 +258,24 @@ impl SaslNegotiator {
     }
 
     fn mechanism_available(&self, mechanism: Mechanism, session: &mut Session) -> bool {
-        if session.connection.is_client_connection() {
-            return match mechanism {
-                Mechanism::External => match session.connection.security() {
-                    Security::AuthenticatedTls => true,
-                    _ => false,
-                },
-                Mechanism::ScramSha1Plus => match session.connection.security() {
-                    Security::AuthenticatedTls => true,
-                    Security::BasicTls => true,
-                    _ => false,
-                },
-                _ => match session.connection.security() {
-                    Security::None => !session.settings.tls.required_for_clients,
-                    _ => true,
-                },
-            };
-        }
+        // if session.connection.is_client_connection() {
+        //     return match mechanism {
+        //         Mechanism::External => match session.connection.security() {
+        //             Security::AuthenticatedTls => true,
+        //             _ => false,
+        //         },
+        //         Mechanism::ScramSha1Plus => match session.connection.security() {
+        //             Security::AuthenticatedTls => true,
+        //             Security::BasicTls => true,
+        //             _ => false,
+        //         },
+        //         _ => match session.connection.security() {
+        //             Security::None => !session.settings.tls.required_for_clients,
+        //             _ => true,
+        //         },
+        //     };
+        // }
 
-        todo!()
+        true
     }
 }
