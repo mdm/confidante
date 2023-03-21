@@ -150,7 +150,8 @@ where
             me.output_bytes_written = 0;
             me.output_bytes_recorded = 0;
 
-            let num_bytes_written = ready!(Pin::new(&mut me.inner_stream).poll_write(cx, buf))?;
+            let num_bytes_to_write = std::cmp::min(buf.len(), me.output_buffer.len());
+            let num_bytes_written = ready!(Pin::new(&mut me.inner_stream).poll_write(cx, &buf[..num_bytes_to_write]))?;
             me.output_buffer
                 .as_mut()
                 .put_slice(&buf[..num_bytes_written]);
@@ -237,7 +238,7 @@ where
 mod test {
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
 
-    use super::StreamRecorder;
+    use super::{StreamRecorder, BUFFER_SIZE};
 
     #[tokio::test]
     async fn read_bytes_are_recorded() {
@@ -285,15 +286,15 @@ mod test {
             .all(|(a, b)| a == b));
     }
 
-    #[tokio::test]
-    async fn written_bytes_are_recorded() {
-        let original_data = (0..1_000_000)
+    
+    async fn written_bytes_are_recorded(data_len: usize, duplex_buf_size: usize, read_buf_size: usize) {
+        let original_data = (0..data_len)
             .map(|_| rand::random::<u8>())
             .collect::<Vec<_>>();
 
         let data = original_data.clone();
 
-        let (mut rx, tx) = duplex(1000);
+        let (mut rx, tx) = duplex(duplex_buf_size);
         let mut recorder = StreamRecorder::try_new(tx, std::env::temp_dir().as_path())
             .await
             .unwrap();
@@ -306,7 +307,7 @@ mod test {
         });
 
         let read = tokio::spawn(async move {
-            let mut buffer = [0u8; 1001];
+            let mut buffer = vec![0u8; read_buf_size];
             loop {
                 let n = rx.read(&mut buffer).await.unwrap();
 
@@ -328,5 +329,15 @@ mod test {
             .iter()
             .zip(original_data.iter())
             .all(|(a, b)| a == b));
+    }
+
+    #[tokio::test]
+    async fn write_with_duplex_buf_bigger_than_internal_buf() {
+        written_bytes_are_recorded(1_000_000, BUFFER_SIZE * 2, 1_001).await;
+    }
+
+    #[tokio::test]
+    async fn write_with_duplex_buf_smaller_than_internal_buf() {
+        written_bytes_are_recorded(1_000_000, BUFFER_SIZE / 2, 1_001).await;
     }
 }
