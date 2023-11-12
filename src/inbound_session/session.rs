@@ -4,7 +4,7 @@ use rand::{RngCore, SeedableRng};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 use crate::settings::Settings;
-use crate::xml_stream_parser::{XmlFrame, XmlStreamParser};
+use crate::xml::{Frame, rusty_xml_stream_parser::RustyXmlStreamParser};
 
 use super::tls::TlsToken;
 
@@ -24,7 +24,7 @@ impl Session {
     
     pub async fn receive_stream_header(&mut self) -> Result<String, Error> {
         match self.read_frame().await {
-            Ok(Some(XmlFrame::StreamStart(stream_header))) => {
+            Ok(Some(Frame::StreamStart(stream_header))) => {
                 match stream_header.attributes.get(&("xmlns".into(), None)) {
                     Some(xmlns) => match xmlns.as_str() {
                         "jabber:client" => {

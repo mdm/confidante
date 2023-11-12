@@ -1,6 +1,8 @@
 mod inbound_session;
+mod jid;
 mod settings;
-mod xml_stream_parser;
+mod types;
+mod xml;
 
 use inbound_session::InboundSession;
 use settings::Settings;

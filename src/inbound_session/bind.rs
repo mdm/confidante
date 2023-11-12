@@ -1,6 +1,6 @@
 use anyhow::{Error, bail};
 
-use crate::xml_stream_parser::XmlFrame;
+use crate::xml::Frame;
 
 use super::sasl::AuthenticatedEntity;
 use super::session::Session;
@@ -27,7 +27,7 @@ impl ResourceBindingNegotiator {
 
     pub async fn bind_resource(&self, entity: &AuthenticatedEntity, session: &mut Session) -> Result<BoundResource, Error> {
         let iq_stanza = match session.read_frame().await? {
-            Some(XmlFrame::XmlFragment(fragment)) => fragment,
+            Some(Frame::XmlFragment(fragment)) => fragment,
             _ => bail!("expected xml fragment"),
         };
         dbg!(&iq_stanza);

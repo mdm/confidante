@@ -235,7 +235,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
 
     use super::{StreamRecorder, BUFFER_SIZE};

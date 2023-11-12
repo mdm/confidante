@@ -14,7 +14,7 @@ use rsasl::{
 };
 use sha1::Sha1;
 
-use crate::xml_stream_parser::XmlFrame;
+use crate::xml::XmlFrame;
 
 use super::session::Session;
 
