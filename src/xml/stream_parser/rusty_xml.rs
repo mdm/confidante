@@ -1,53 +1,66 @@
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{ready, Context, Poll};
 
 use anyhow::{anyhow, Error};
 use bytes::BytesMut;
-use rustyxml::{Element, ElementBuilder, Event, Parser, StartTag};
-use tokio::io::{AsyncRead, AsyncReadExt};
+use rustyxml::{Element as RustyXmlElement, ElementBuilder, Event, Parser};
+use tokio::io::{AsyncRead, ReadBuf};
 
-use crate::xml::{Frame, StreamParser, StreamHeader, LanguageTag};
-
-#[derive(Debug)]
-pub enum XmlFrame {
-    StreamStart(StartTag), // TODO: parse stream start into struct also usable for output
-    XmlFragment(Element),
-    StreamEnd,
-    // TODO: Variant for character data (e.g. whitespace keep-alive)
-}
+use crate::xml::stream_parser::{Frame, LanguageTag, StreamHeader};
+use crate::xml::Element;
 
 fn valid_stream_tag(name: &String, namespace: &Option<String>) -> bool {
     if name != "stream" {
         return false;
     }
-        
+
     return match namespace {
         Some(uri) => uri == "http://etherx.jabber.org/streams",
         None => false,
+    };
+}
+
+impl From<RustyXmlElement> for Element {
+    fn from(element: RustyXmlElement) -> Self {
+        let name;
+        let namespace;
+        let attributes;
+        let children;
+
+        Element {
+            name,
+            namespace,
+            attributes,
+            children,
+        }
     }
 }
 
-pub struct RustyXmlStreamParser<R: AsyncRead + Unpin> {
+pub struct StreamParser<'a, R: AsyncRead + Unpin> {
     reader: R,
+    buffer: ReadBuf<'a>,
     parser: Parser,
     element_builder: ElementBuilder,
 }
 
-impl<R: AsyncRead + Unpin> StreamParser<R> for RustyXmlStreamParser<R> {
+impl<'a, R: AsyncRead + Unpin> super::StreamParser<R> for StreamParser<'a, R> {
     fn from_async_reader(reader: R) -> Self {
+        let buffer = ReadBuf::new(&mut BytesMut::with_capacity(4096));
         let parser = Parser::new();
         let element_builder = ElementBuilder::new();
 
         Self {
             reader,
+            buffer,
             parser,
             element_builder,
         }
     }
 
-    fn poll_next_frame(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<Option<Frame>, Error>> {
-        let mut buffer = BytesMut::with_capacity(4096); // TODO: don't allocate for each poll
-
+    fn poll_next_frame(
+        mut self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Result<Option<Frame>, Error>> {
         loop {
             // TODO: don't use for loop here - does it matter? (we return in both match arms)
             for parser_result in &mut self.parser {
@@ -55,10 +68,19 @@ impl<R: AsyncRead + Unpin> StreamParser<R> for RustyXmlStreamParser<R> {
                     Ok(Event::ElementStart(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
                         dbg!(&tag.ns, &tag.attributes);
                         let header = StreamHeader {
-                            from: tag.attributes.get(&("from".to_string(), None)).and_then(|jid| jid.parse().ok()),
-                            to: tag.attributes.get(&("to".to_string(), None)).and_then(|jid| jid.parse().ok()),
+                            from: tag
+                                .attributes
+                                .get(&("from".to_string(), None))
+                                .and_then(|jid| jid.parse().ok()),
+                            to: tag
+                                .attributes
+                                .get(&("to".to_string(), None))
+                                .and_then(|jid| jid.parse().ok()),
                             id: None,
-                            language: tag.attributes.get(&("xml:lang".to_string(), None)).map(|lang| LanguageTag(lang.to_string())),
+                            language: tag
+                                .attributes
+                                .get(&("xml:lang".to_string(), None))
+                                .map(|lang| LanguageTag(lang.to_string())),
                         };
                         return Poll::Ready(Ok(Some(Frame::StreamStart(header))));
                     }
@@ -75,20 +97,22 @@ impl<R: AsyncRead + Unpin> StreamParser<R> for RustyXmlStreamParser<R> {
                 }
 
                 if let Some(builder_result) = self.element_builder.handle_event(parser_result) {
-                    return Poll::Ready(match builder_result {
-                        Ok(element) => Ok(Some(Frame::XmlFragment(element))),
+                    let frame_result = match builder_result {
+                        Ok(element) => Ok(Some(Frame::XmlFragment(element.into()))),
                         Err(err) => Err(anyhow!(err)),
-                    })
+                    };
+                    return Poll::Ready(frame_result);
                 }
             }
 
-            let bytes_read = socket.read_buf(&mut buffer);
+            ready!(Pin::new(&mut self.reader).poll_read(cx, &mut self.buffer))?;
+            let bytes_read = self.buffer.filled().len();
 
             if bytes_read == 0 {
                 return Poll::Ready(Ok(None));
             }
 
-            match std::str::from_utf8(&buffer.split_to(bytes_read)) {
+            match std::str::from_utf8(&self.buffer.filled()) {
                 Ok(str) => {
                     println!("{}", str);
                     self.parser.feed_str(str);
@@ -98,6 +122,8 @@ impl<R: AsyncRead + Unpin> StreamParser<R> for RustyXmlStreamParser<R> {
                     return Poll::Ready(Err(anyhow!(err)));
                 }
             }
+
+            self.buffer.clear();
         }
     }
 

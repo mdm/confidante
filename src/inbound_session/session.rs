@@ -4,20 +4,20 @@ use rand::{RngCore, SeedableRng};
 use tokio::{io::AsyncWriteExt, net::TcpStream};
 
 use crate::settings::Settings;
-use crate::xml::{Frame, rusty_xml_stream_parser::RustyXmlStreamParser};
+use crate::xml::stream_parser::{Frame, RustyXml};
 
 use super::tls::TlsToken;
 
 pub struct Session {
     pub settings: Settings,
     pub connection: TcpStream, // TODO: Refactor to make this private again
-    parser: XmlStreamParser,
+    parser: RustyXml,
 }
 
 impl Session {
     pub fn from_socket(socket: TcpStream, settings: Settings) -> Self {
         let connection = socket;
-        let parser = XmlStreamParser::new();
+        let parser = Result::from_async_reader();
 
         Self { connection, parser, settings }
     }
