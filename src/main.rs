@@ -1,10 +1,10 @@
-mod inbound_session;
-mod jid;
+mod inbound; // TODO: rename to inbound
+mod xmpp;
 mod settings;
 mod types;
 mod xml;
 
-use inbound_session::InboundSession;
+use inbound::InboundStreamNegotiator;
 use settings::Settings;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Error> {
         // TODO: handle shutdown
 
         tokio::spawn(async move {
-            let mut session = InboundSession::from_socket(socket, settings);
+            let mut session = InboundStreamNegotiator::from_socket(socket, settings);
 
             if let Err(err) = session.handle().await {
                 session.handle_unrecoverable_error(err).await;

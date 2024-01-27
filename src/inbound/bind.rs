@@ -1,6 +1,6 @@
 use anyhow::{Error, bail};
 
-use crate::xml::Frame;
+use crate::xml::stream_parser::Frame;
 
 use super::sasl::AuthenticatedEntity;
 use super::session::Session;
