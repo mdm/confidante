@@ -48,7 +48,7 @@ pub struct StreamParser<'a, R: AsyncRead + Unpin> {
 impl<'a, R: AsyncRead + Unpin> super::StreamParser for StreamParser<'a, R> {
     type Reader = R;
     
-    fn from_async_reader(reader: R) -> Self {
+    fn new(reader: R) -> Self {
         let buffer = ReadBuf::new(&mut BytesMut::with_capacity(4096));
         let parser = Parser::new();
         let element_builder = ElementBuilder::new();
@@ -61,7 +61,7 @@ impl<'a, R: AsyncRead + Unpin> super::StreamParser for StreamParser<'a, R> {
         }
     }
 
-    fn into_async_reader(self) -> R {
+    fn into_inner(self) -> R {
         self.reader
     }
 }

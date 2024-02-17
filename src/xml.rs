@@ -21,3 +21,11 @@ pub struct Element {
     pub attributes: HashMap<(String, Option<String>), String>,
     pub children: Vec<Node>,
 }
+
+impl Element {
+    pub fn get_attribute(&self, name: &str, namespace: Option<&str>) -> Option<&str> {
+        self.attributes
+            .get(&(name.to_string(), namespace.map(|s| s.to_string())))
+            .map(|s| s.as_str())
+    }
+}

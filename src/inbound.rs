@@ -1,13 +1,11 @@
 mod bind;
 mod connection;
 mod sasl;
-mod info;
 mod tls;
 
 use std::collections::HashMap;
 
 use anyhow::{bail, Error};
-use futures::Stream;
 use tokio::{io::AsyncWrite, net::TcpStream};
 use tokio_stream::StreamExt;
 
@@ -16,9 +14,9 @@ use crate::xmpp::stream_header::{StreamHeader, StreamId};
 use crate::{
     settings::Settings,
     xml::{
-        Element,
         stream_parser::{Frame, StreamParser},
         stream_writer::StreamWriter,
+        Element, Node,
     },
 };
 
@@ -44,15 +42,18 @@ impl<'s> InboundStreamNegotiator<'s> {
         let state = State::Connected;
         let stream_id = StreamId::new();
 
-        Self { settings, state, stream_id }
+        Self {
+            settings,
+            state,
+            stream_id,
+        }
     }
 
-    pub async fn run<P: StreamParser, W: AsyncWrite>(
+    pub async fn run<P: StreamParser, W: AsyncWrite + Unpin>(
         &mut self,
         stream_parser: &mut P,
-        writer: &mut W,
+        stream_writer: &mut StreamWriter<W>,
     ) -> Result<(), Error> {
-        let writer = StreamWriter::new(writer);
         loop {
             // TODO: handle timeouts while waiting for next frame
             match &self.state {
@@ -76,7 +77,9 @@ impl<'s> InboundStreamNegotiator<'s> {
                         language: None,
                     };
 
-                    writer.write_stream_header(&outbound_header, true).await?;
+                    stream_writer
+                        .write_stream_header(&outbound_header, true)
+                        .await?;
 
                     if self.settings.tls.required_for_clients {
                         todo!();
@@ -86,12 +89,14 @@ impl<'s> InboundStreamNegotiator<'s> {
                             name: "features".to_string(),
                             namespace: Some(namespaces::XMPP_STREAMS.to_string()),
                             attributes: HashMap::new(),
-                            children: vec![sasl.advertise_feature(false)],
+                            children: vec![Node::Element(sasl.advertise_feature(false, false))],
                         };
 
                         // TODO: advertise voluntary-to-negotiate features
 
-                        let authenticated_entity = sasl.authenticate(&mut self.session).await?;
+                        let authenticated_entity = sasl
+                            .authenticate(stream_parser, stream_writer, false, false)
+                            .await?;
                         dbg!(&authenticated_entity);
                         self.state = State::Authenticated(authenticated_entity, false);
                     }
@@ -126,22 +131,32 @@ impl<'s> InboundStreamNegotiator<'s> {
         }
     }
 
-    pub async fn handle_unrecoverable_error(&mut self, error: Error) {
+    pub async fn handle_unrecoverable_error<W: AsyncWrite + Unpin>(
+        &mut self,
+        stream_writer: &mut StreamWriter<W>,
+        error: Error,
+    ) {
         dbg!(error);
 
-        self.session
-            .write_bytes(
-                r#"<stream:error>
-    <internal-server-error xmlns='urn:ietf:params:xml:ns:xmpp-streams'/>
-</stream:error>"#
-                    .as_bytes(),
-            )
-            .await; // TODO: add proper error handling and handle error during error delivery
+        let error = Element {
+            name: "error".to_string(),
+            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
+            attributes: HashMap::new(),
+            children: vec![Node::Element(Element {
+                name: "internal-server-error".to_string(),
+                namespace: Some(namespaces::XMPP_STREAM_ERRORS.to_string()),
+                attributes: HashMap::new(),
+                children: vec![],
+            })],
+        };
+
+        stream_writer.write_xml_element(&error).await; // TODO: add proper error handling and handle error during error delivery
     }
 
-    pub async fn close_stream(&mut self) {
-        self.session
-            .write_bytes("</stream:stream>".as_bytes())
-            .await; // TODO: handle error during close tag delivery
+    pub async fn close_stream<W: AsyncWrite + Unpin>(
+        &mut self,
+        stream_writer: &mut StreamWriter<W>,
+    ) {
+        stream_writer.write_stream_close().await; // TODO: handle error during close tag delivery
     }
 }

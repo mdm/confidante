@@ -5,3 +5,4 @@ pub const XMPP_STREAMS: &str = "http://etherx.jabber.org/streams";
 pub const XMPP_CLIENT: &str = "jabber:client";
 pub const XMPP_SERVER: &str = "jabber:server";
 pub const XMPP_SASL: &str = "urn:ietf:params:xml:ns:xmpp-sasl";
+pub const XMPP_STREAM_ERRORS: &str = "urn:ietf:params:xml:ns:xmpp-streams";

@@ -6,6 +6,8 @@ mod xml;
 
 use inbound::InboundStreamNegotiator;
 use settings::Settings;
+use xml::stream_parser::{rusty_xml::StreamParser as ConcreteStreamParser, StreamParser};
+use xml::stream_writer::StreamWriter;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -21,15 +23,21 @@ async fn main() -> Result<(), Error> {
         // TODO: handle shutdown
 
         tokio::spawn(async move {
-            let mut session = InboundStreamNegotiator::from_socket(socket, settings);
+            let mut inbound_negotiator = InboundStreamNegotiator::new(&settings);
 
-            if let Err(err) = session.handle().await {
-                session.handle_unrecoverable_error(err).await;
+            let (reader, writer) = tokio::io::split(socket);
+
+            // TODO: handle constructors for parser and writer in the same way
+            let stream_parser = ConcreteStreamParser::new(reader);
+            let stream_writer = StreamWriter::new(writer);
+
+            if let Err(err) = inbound_negotiator.run(&mut stream_parser, &mut stream_writer).await {
+                // TODO: move error handling out of negotiator
+                inbound_negotiator.handle_unrecoverable_error(&mut stream_writer, err).await;
             }
 
-            session.close_stream().await;
+            // TODO: move stream closing out of negotiator
+            inbound_negotiator.close_stream(&mut stream_writer).await;
         });
     }
-
-    Ok(())
 }

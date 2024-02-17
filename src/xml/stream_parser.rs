@@ -19,6 +19,6 @@ pub enum Frame {
 pub trait StreamParser: Stream<Item = Result<Frame, Error>> + Unpin {
     type Reader: AsyncRead + Unpin;
 
-    fn from_async_reader(reader: Self::Reader) -> Self;
-    fn into_async_reader(self) -> Self::Reader;
+    fn new(reader: Self::Reader) -> Self;
+    fn into_inner(self) -> Self::Reader;
 }

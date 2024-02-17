@@ -10,13 +10,13 @@ use crate::xml::Element;
 use crate::xml::Node;
 use crate::xmpp::stream_header::StreamHeader;
 
-struct StreamWriter<'w, W: AsyncWrite + Unpin> {
-    writer: &'w mut W,
+pub struct StreamWriter<W: AsyncWrite + Unpin> {
+    writer: W,
     namespaces: Vec<HashMap<String, String>>, // stacked namespace to prefix map
 }
 
-impl<'w, W: AsyncWrite + Unpin> StreamWriter<'w, W> {
-    pub fn new(writer: &mut W) -> Self {
+impl<W: AsyncWrite + Unpin> StreamWriter<W> {
+    pub fn new(writer: W) -> Self {
         let mut namespaces = HashMap::new();
         namespaces.insert(namespaces::XML.to_string(), "xml".to_string());
         namespaces.insert(namespaces::XMLNS.to_string(), "xmlns".to_string());
@@ -60,16 +60,28 @@ impl<'w, W: AsyncWrite + Unpin> StreamWriter<'w, W> {
             namespaces::XMPP_STREAMS.to_string(),
         );
 
-        let header_element = Element {
+        let stream_element = Element {
             name: "stream".to_string(),
             namespace: Some(namespaces::XMPP_STREAMS.to_string()),
             attributes: header_attributes,
             children: vec![],
         };
 
-        let formatted_header = self.build_opening_tag(&header_element, false);
-        self.write_str(&formatted_header).await
+        let opening_tag = self.build_opening_tag(&stream_element, false);
+        self.write_str(&opening_tag).await
     }
+
+    pub async fn write_stream_close(&mut self) -> Result<(), Error> {
+        let stream_element = Element {
+            name: "stream".to_string(),
+            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
+            attributes: HashMap::new(),
+            children: vec![],
+        };
+
+        let closing_tag = self.build_closing_tag(&stream_element);
+        self.write_str(&closing_tag).await
+   }
 
     pub async fn write_xml_element(&mut self, element: &Element) -> Result<(), Error> {
         self.write_str(&self.build_xml_element(element)).await

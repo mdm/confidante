@@ -1,31 +1,188 @@
-use std::io::Cursor;
+use std::{collections::HashMap, fmt::Display};
 
 use anyhow::{anyhow, bail, Error};
-use bytes::{BufMut, BytesMut};
-use digest::{Digest, Output, generic_array::GenericArray};
-use rsasl::{
-    callback::{Context, Request, SessionCallback, SessionData},
-    config::SASLConfig,
-    mechanisms::scram,
-    mechanisms::scram::properties::ScramStoredPassword,
-    prelude::{SASLServer, SessionError, State},
-    property::{AuthId, Password},
-    validate::{Validate, Validation, ValidationError}, mechname::Mechname,
-};
-use sha1::Sha1;
+use base64::prelude::*;
+use tokio::io::AsyncWrite;
+use tokio_stream::StreamExt;
 
-use crate::xml::XmlFrame;
+use crate::xml::{namespaces, stream_parser::{Frame, StreamParser}, stream_writer::StreamWriter, Element, Node};
 
-use super::session::Session;
+mod scram;
 
 #[derive(Debug)]
 pub struct AuthenticatedEntity(pub String, ());
+
+
+pub struct SaslNegotiator {
+    _private: (),
+}
+
+impl SaslNegotiator {
+    pub fn new() -> Self {
+        Self { _private: () }
+    }
+
+    pub fn advertise_feature(&self, secure: bool, authenticated: bool) -> Element {
+        let mut available_mechanisms = Vec::new();
+
+        if self.mechanism_available(&Mechanism::External, secure, authenticated) {
+            available_mechanisms.push(Node::Element(Mechanism::External.to_element()));
+        }
+        if self.mechanism_available(&Mechanism::ScramSha1Plus, secure, authenticated) {
+            available_mechanisms.push(Node::Element(Mechanism::ScramSha1Plus.to_element()));
+        }
+        if self.mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
+            available_mechanisms.push(Node::Element(Mechanism::ScramSha1.to_element()));
+        }
+        if self.mechanism_available(&Mechanism::Plain, secure, authenticated) {
+            available_mechanisms.push(Node::Element(Mechanism::Plain.to_element()));
+        }
+
+        if available_mechanisms.is_empty() {
+            todo!("make sure at least one mechanism is available");
+        }
+
+        Element {
+            name: "mechanisms".to_string(),
+            namespace: Some(namespaces::XMPP_SASL.to_string()),
+            attributes: HashMap::new(),
+            children: available_mechanisms,
+        }
+    }
+
+    pub async fn authenticate<P: StreamParser, W: AsyncWrite + Unpin>(
+        &self,
+        stream_parser: &mut P,
+        stream_writer: &mut StreamWriter<W>,
+        secure: bool,
+        authenticated: bool,
+    ) -> Result<AuthenticatedEntity, Error> {
+        let Some(Ok(Frame::XmlFragment(auth))) = stream_parser.next().await else {
+            bail!("expected xml fragment");
+        };
+        if auth.name != "auth" { // TODO: check namespace
+            bail!("expected auth tag");
+        }
+
+        let mechanism = match auth.get_attribute("mechanism", None) {
+            Some(mechanism) => Mechanism::try_from(mechanism)?,
+            None => bail!("auth element is missing mechanism attribute"),
+        };
+
+        // TODO: verify mechanism is available
+
+        let mut response_payload = BASE64_STANDARD.decode(auth.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
+
+        loop {
+            let result = mechanism.negotiator().process(response_payload);    
+
+            match result {
+                Ok(Some(challenge)) => {
+                    let challenge = BASE64_STANDARD.encode(challenge);
+                    let xml = Element {
+                        name: "challenge".to_string(),
+                        namespace: Some(namespaces::XMPP_SASL.to_string()),
+                        attributes: HashMap::new(),
+                        children: vec![Node::Text(challenge)],
+                    };
+                    stream_writer.write_xml_element(&xml).await?;
+                }
+                Ok(None) => {
+                    let xml = Element {
+                        name: "success".to_string(),
+                        namespace: Some(namespaces::XMPP_SASL.to_string()),
+                        attributes: HashMap::new(),
+                        children: vec![],
+                    };
+                    stream_writer.write_xml_element(&xml).await?;
+                    return Ok(AuthenticatedEntity("user".to_string(), ())); // TODO: don't hard-code username
+                }
+                Err(err) => {
+                    let reason = Element {
+                        name: "not-authorized".to_string(),
+                        namespace: Some(namespaces::XMPP_SASL.to_string()),
+                        attributes: HashMap::new(),
+                        children: vec![],
+                    };
+                    let xml = Element {
+                        name: "failure".to_string(),
+                        namespace: Some(namespaces::XMPP_SASL.to_string()),
+                        attributes: HashMap::new(),
+                        children: vec![Node::Element(reason)],
+                    };
+                    stream_writer.write_xml_element(&xml).await?;
+                }                    
+            }
+
+            let Some(Ok(Frame::XmlFragment(response))) = stream_parser.next().await else {
+                bail!("expected xml fragment");
+            };
+
+            match response.name.as_str() {
+                "response" => {
+                    response_payload = BASE64_STANDARD.decode(response.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
+                }
+                "abort" => {
+                    // TODO: send "failure" element
+                    bail!("authentication aborted");
+                }
+                _ => {
+                    // TODO: send "failure" element
+                    bail!("unexpected element");
+                }
+            }
+
+
+        }
+        
+    }
+
+    fn mechanism_available(
+        &self,
+        mechanism: &Mechanism,
+        secure: bool,
+        authenticated: bool,
+    ) -> bool {
+        match mechanism {
+            Mechanism::External => secure && authenticated,
+            Mechanism::Plain => secure,
+            Mechanism::ScramSha1 => true,
+            Mechanism::ScramSha1Plus => secure,
+        }
+    }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum SaslError { // TODO: do we need this?
+    #[error("the SASL mechanism `{0}` is not supported")]
+    UnsupportedMechanism(String),
+}
 
 enum Mechanism {
     External,
     Plain,
     ScramSha1,
     ScramSha1Plus,
+}
+
+impl Mechanism {
+    fn to_element(&self) -> Element {
+        Element {
+            name: "mechanism".to_string(),
+            namespace: Some(namespaces::XMPP_SASL.to_string()),
+            attributes: HashMap::new(),
+            children: vec![Node::Text(self.to_string())],
+        }
+    }
+
+    fn negotiator(&self) -> impl MechanismNegotiator {
+        match self {
+            Mechanism::External => todo!(),
+            Mechanism::Plain => todo!(),
+            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new(),
+            Mechanism::ScramSha1Plus => todo!(),
+        }
+    }
 }
 
 impl TryFrom<&str> for Mechanism {
@@ -42,240 +199,18 @@ impl TryFrom<&str> for Mechanism {
     }
 }
 
-struct SaslValidation;
-impl Validation for SaslValidation {
-    type Value = Result<String, Error>;
-}
-
-struct SaslCallback {
-    stored_key: Output<Sha1>,
-    server_key: Output<Sha1>,
-    salt: &'static [u8],
-}
-
-impl SessionCallback for SaslCallback {
-    fn callback(
-        &self,
-        _session_data: &SessionData,
-        _context: &Context,
-        request: &mut Request<'_>,
-    ) -> Result<(), SessionError> {
-        request.satisfy::<ScramStoredPassword>(&ScramStoredPassword {
-            iterations: 4096,
-            salt: self.salt,
-            stored_key: self.stored_key.as_slice(),
-            server_key: self.server_key.as_slice(),
-        })?;
-        request.satisfy::<Password>(b"password")?;
-
-        Ok(())
-    }
-
-    fn validate(
-        &self,
-        _session_data: &SessionData,
-        context: &Context,
-        validate: &mut Validate<'_>,
-    ) -> Result<(), ValidationError> {
-        let authid = context
-            .get_ref::<AuthId>();
-
-        validate.with::<SaslValidation, _>(|| {
-            match authid {
-                Some(user @ "user") => Ok(Ok(String::from(user))),
-                _ => Ok(Err(anyhow!("Unknown user"))),
-            }
-        })?;
-        
-
-        Ok(())
+impl Display for Mechanism {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mechanism::External => write!(f, "EXTERNAL"),
+            Mechanism::Plain => write!(f, "PLAIN"),
+            Mechanism::ScramSha1 => write!(f, "SCRAM-SHA-1"),
+            Mechanism::ScramSha1Plus => write!(f, "SCRAM-SHA-1-PLUS"),
+        }
     }
 }
 
-#[derive(thiserror::Error, Debug)]
-pub enum SaslError {
-    #[error("the SASL mechanism `{0}` is not supported")]
-    UnsupportedMechanism(String),
-}
-
-pub struct SaslNegotiator {
-    _private: (),
-}
-
-impl SaslNegotiator {
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
-
-    pub async fn advertise_feature(&self, session: &mut Session) -> Result<(), Error> {
-        let mut any_mechanism_available = false;
-        let mut buffer = BytesMut::new();
-
-        if self.mechanism_available(Mechanism::External, session) {
-            buffer.put("    <mechanism>EXTERNAL</mechanism>\n".as_bytes());
-            any_mechanism_available = true;
-        }
-        if self.mechanism_available(Mechanism::ScramSha1Plus, session) {
-            buffer.put("    <mechanism>SCRAM-SHA-1-PLUS</mechanism>\n".as_bytes());
-            any_mechanism_available = true;
-        }
-        if self.mechanism_available(Mechanism::ScramSha1, session) {
-            buffer.put("    <mechanism>SCRAM-SHA-1</mechanism>\n".as_bytes());
-            any_mechanism_available = true;
-        }
-        if self.mechanism_available(Mechanism::Plain, session) {
-            buffer.put("    <mechanism>PLAIN</mechanism>\n".as_bytes());
-            any_mechanism_available = true;
-        }
-
-        if any_mechanism_available {
-            session
-                .write_bytes("<mechanisms xmlns=\"urn:ietf:params:xml:ns:xmpp-sasl\">\n".as_bytes())
-                .await?;
-            session.write_buffer(&mut buffer).await?;
-            session.write_bytes("</mechanisms>\n".as_bytes()).await?;
-        }
-
-        Ok(())
-    }
-
-    pub async fn authenticate(&self, session: &mut Session) -> Result<AuthenticatedEntity, Error> {
-        let fragment = match session.read_frame().await? {
-            Some(XmlFrame::XmlFragment(fragment)) => fragment,
-            _ => bail!("expected xml fragment"),
-        };
-        if fragment.name != "auth" {
-            bail!("expected auth tag");
-        }
-
-        let mechanism = match fragment.get_attribute("mechanism", None) {
-            Some(mechanism) => Mechanism::try_from(mechanism)?,
-            None => bail!("auth element is missing mechanism attribute"),
-        };
-
-        // TODO: verify mechanism is available
-
-        let plain_password = b"password";
-        let salt = b"bad salt";
-        let mut salted_password = GenericArray::default();
-        // Derive the PBKDF2 key from the password and salt. This is the expensive part
-        // TODO: do we need to off-load this to a separate thread? bechnmark!
-        scram::tools::hash_password::<Sha1>(plain_password, 4096, &salt[..], &mut salted_password);
-        let (client_key, server_key) = scram::tools::derive_keys::<Sha1>(salted_password.as_slice());
-        let stored_key = Sha1::digest(&client_key);
-
-        let sasl_config = SASLConfig::builder()
-            .with_defaults()
-            .with_callback(SaslCallback { salt, server_key, stored_key })?;
-
-        let sasl = SASLServer::<SaslValidation>::new(sasl_config);
-
-        let mut sasl_session = match mechanism {
-            Mechanism::ScramSha1 => sasl
-                .start_suggested(Mechname::parse(b"SCRAM-SHA-1").unwrap())?,
-            _ => todo!(),
-        };
-
-        let mut client_response = base64::decode(fragment.content_str())?;
-        let mut server_challenge_or_success = BytesMut::new();
-
-        let mut do_last_step = false;
-        let mut done = false;
-        loop {
-            {
-                let mut out = Cursor::new(Vec::new());
-                let step_result = if do_last_step {
-                    do_last_step = false;
-                    sasl_session
-                    .step(None, &mut out)?
-                } else { 
-                    sasl_session
-                    .step(Some(&client_response), &mut out)?
-                };
-
-                match step_result {
-                    (State::Running, Some(len)) => {
-                        let mut challenge = BytesMut::new();
-                        challenge
-                            .put("<challenge xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>".as_bytes());
-                        let encoded = base64::encode(&out.into_inner()[..len]);
-                        challenge.put(encoded.as_bytes());
-                        challenge.put("</challenge>".as_bytes());
-                        server_challenge_or_success = challenge;
-                    }
-                    (State::Running, None) => {
-                        do_last_step = true;
-                    }
-                    (State::Finished, Some(len)) => {
-                        // TODO: Compare identity to stream header
-
-                        let mut success = BytesMut::new();
-                        success
-                            .put("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl'>".as_bytes());
-                        let encoded = base64::encode(&out.into_inner()[..len]);
-                        success.put(encoded.as_bytes());
-                        success.put("</success>".as_bytes());
-                        server_challenge_or_success = success;
-                        done = true;
-                    }
-                    (State::Finished, None) => {
-                        // TODO: Compare identity to stream header
-
-                        let mut success = BytesMut::new();
-                        success
-                            .put("<success xmlns='urn:ietf:params:xml:ns:xmpp-sasl' />".as_bytes());
-                        server_challenge_or_success = success;
-                        done = true;
-                    }
-                }
-            }
-
-            // dbg!(&server_challenge_or_success);
-
-            session
-                .write_buffer(&mut server_challenge_or_success)
-                .await?;
-
-            if done {
-                break;
-            }
-
-            let fragment = match session.read_frame().await? {
-                Some(XmlFrame::XmlFragment(fragment)) => fragment,
-                _ => bail!("expected xml fragment"),
-            };
-            if fragment.name != "response" {
-                bail!("expected response tag");
-            }
-
-            client_response = base64::decode(fragment.content_str())?;
-        }
-
-        match sasl_session.validation() {
-            Some(Ok(entity)) => Ok(AuthenticatedEntity(entity, ())),
-            _ => Err(anyhow!("validation failed")),
-        }
-    }
-
-    fn mechanism_available(&self, mechanism: Mechanism, session: &mut Session) -> bool {
-        // if session.connection.is_client_connection() {
-        //     return match mechanism {
-        //         Mechanism::External => match session.connection.security() {
-        //             Security::AuthenticatedTls => true,
-        //             _ => false,
-        //         },
-        //         Mechanism::ScramSha1Plus => match session.connection.security() {
-        //             Security::AuthenticatedTls => true,
-        //             Security::BasicTls => true,
-        //             _ => false,
-        //         },
-        //         _ => match session.connection.security() {
-        //             Security::None => !session.settings.tls.required_for_clients,
-        //             _ => true,
-        //         },
-        //     };
-        // }
-
-        true
-    }
+trait MechanismNegotiator {
+    fn new() -> Self;
+    fn process(&self, payload: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
 }
