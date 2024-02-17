@@ -1,3 +1,4 @@
+domain: localhost
 tls:
   required_for_clients: true
   required_for_servers: true

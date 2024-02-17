@@ -2,8 +2,9 @@ use std::{fmt::{Display, Formatter}, str::FromStr};
 
 use anyhow::{bail, Error};
 use regex::Regex;
+use serde_with::DeserializeFromStr;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct DomainPart(String);
 
 impl Display for DomainPart {
@@ -12,7 +13,7 @@ impl Display for DomainPart {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct LocalPart(String);
 
 impl Display for LocalPart {
@@ -21,7 +22,7 @@ impl Display for LocalPart {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ResourcePart(String);
 
 impl Display for ResourcePart {
@@ -30,7 +31,7 @@ impl Display for ResourcePart {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, DeserializeFromStr)]
 pub struct Jid {
     local: Option<LocalPart>,
     domain: DomainPart,

@@ -1,17 +1,22 @@
 mod bind;
 mod connection;
 mod sasl;
-mod session;
+mod info;
 mod tls;
 
+use std::collections::HashMap;
+
 use anyhow::{bail, Error};
+use futures::Stream;
 use tokio::{io::AsyncWrite, net::TcpStream};
 use tokio_stream::StreamExt;
 
-use crate::xmpp::stream_header::StreamHeader;
+use crate::xml::namespaces;
+use crate::xmpp::stream_header::{StreamHeader, StreamId};
 use crate::{
     settings::Settings,
     xml::{
+        Element,
         stream_parser::{Frame, StreamParser},
         stream_writer::StreamWriter,
     },
@@ -23,21 +28,23 @@ use bind::{BoundResource, ResourceBindingNegotiator};
 enum State {
     Connected, // TODO: do we need a consumable token here?
     Secured,   // TODO: do we need the proof token here?
-    Authenticated(AuthenticatedEntity),
+    Authenticated(AuthenticatedEntity, bool),
     Bound(BoundResource),
 }
 
 pub struct InboundStreamNegotiator<'s> {
     settings: &'s Settings,
     state: State,
+    stream_id: StreamId,
 }
 
 // TODO: rename to InboundStreamNegotiator and feed Result<Frame>s instead of encapsulating the socket
 impl<'s> InboundStreamNegotiator<'s> {
     pub fn new(settings: &Settings) -> Self {
         let state = State::Connected;
+        let stream_id = StreamId::new();
 
-        Self { settings, state }
+        Self { settings, state, stream_id }
     }
 
     pub async fn run<P: StreamParser, W: AsyncWrite>(
@@ -60,16 +67,12 @@ impl<'s> InboundStreamNegotiator<'s> {
                         bail!("expected stream header");
                     };
 
-                    let Some(to) = inbound_header.to else {
-                        bail!("`to` field is required in incoming stream header");
-                    };
-
                     // TODO: check if `to` is a valid domain for this server
 
                     let outbound_header = StreamHeader {
-                        from: None,
-                        to: Some(to),
-                        id: None, // TODO: generate id here; StreamWriter should not know the id semantics
+                        from: Some(self.settings.domain),
+                        to: inbound_header.from,
+                        id: Some(self.stream_id),
                         language: None,
                     };
 
@@ -81,22 +84,22 @@ impl<'s> InboundStreamNegotiator<'s> {
                         let sasl = SaslNegotiator::new();
                         let features = Element {
                             name: "features".to_string(),
-                            namespace: Some("stream".to_string()),
-                            attributes: vec![],
-                            children: sasl.advertise_feature(&mut self.session).await?,
+                            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
+                            attributes: HashMap::new(),
+                            children: vec![sasl.advertise_feature(false)],
                         };
 
                         // TODO: advertise voluntary-to-negotiate features
 
                         let authenticated_entity = sasl.authenticate(&mut self.session).await?;
                         dbg!(&authenticated_entity);
-                        self.state = State::Authenticated(authenticated_entity);
+                        self.state = State::Authenticated(authenticated_entity, false);
                     }
                 }
                 State::Secured => {
                     todo!();
                 }
-                State::Authenticated(entity) => {
+                State::Authenticated(entity, secure) => {
                     let to = self.session.receive_stream_header().await?;
                     self.session.send_stream_header(&to, true).await?;
 

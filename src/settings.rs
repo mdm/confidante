@@ -1,3 +1,5 @@
+use crate::xmpp::jid::Jid;
+
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Tls {
     pub required_for_clients: bool,
@@ -6,6 +8,7 @@ pub struct Tls {
 
 #[derive(Clone, Debug, serde::Deserialize)]
 pub struct Settings {
+    pub domain: Jid, // TODO: can we deserialize this into a Jid?
     pub tls: Tls,
 }
 

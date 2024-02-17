@@ -3,7 +3,6 @@ use anyhow::{Error, bail};
 use crate::xml::stream_parser::Frame;
 
 use super::sasl::AuthenticatedEntity;
-use super::session::Session;
 
 #[derive(Debug)]
 pub struct BoundResource(pub String, ());
@@ -20,12 +19,12 @@ impl ResourceBindingNegotiator {
         }
     }
 
-    pub async fn advertise_feature(&self, session: &mut Session) -> Result<(), Error> { // TODO: decide if this should be part of a trait
+    pub async fn advertise_feature(&self, session: &mut StreamInfo) -> Result<(), Error> { // TODO: decide if this should be part of a trait
         session.write_bytes("<bind xmlns=\"urn:ietf:params:xml:ns:xmpp-bind\"/>\n".as_bytes()).await?;
         Ok(())
     }
 
-    pub async fn bind_resource(&self, entity: &AuthenticatedEntity, session: &mut Session) -> Result<BoundResource, Error> {
+    pub async fn bind_resource(&self, entity: &AuthenticatedEntity, session: &mut StreamInfo) -> Result<BoundResource, Error> {
         let iq_stanza = match session.read_frame().await? {
             Some(Frame::XmlFragment(fragment)) => fragment,
             _ => bail!("expected xml fragment"),
