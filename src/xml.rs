@@ -28,4 +28,16 @@ impl Element {
             .get(&(name.to_string(), namespace.map(|s| s.to_string())))
             .map(|s| s.as_str())
     }
+
+    pub fn get_text(&self) -> String {
+        let mut text = String::new();
+        for child in &self.children {
+            match child {
+                Node::Text(s) => text.push_str(s),
+                // Node::CData(s) => text.push_str(s), // TODO: is this correct?
+                _ => {}
+            }
+        }
+        text
+    }
 }

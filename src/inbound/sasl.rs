@@ -65,19 +65,20 @@ impl SaslNegotiator {
         }
 
         let mechanism = match auth.get_attribute("mechanism", None) {
-            Some(mechanism) => Mechanism::try_from(mechanism)?,
+            Some(mechanism) => Mechanism::try_from(mechanism).unwrap(), // TODO: handle "invalid-mechanism"
             None => bail!("auth element is missing mechanism attribute"),
         };
 
         // TODO: verify mechanism is available
 
+        let negotiator = mechanism.negotiator()?; // TODO: handle error locally
         let mut response_payload = BASE64_STANDARD.decode(auth.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
 
         loop {
-            let result = mechanism.negotiator().process(response_payload);    
+            let result = negotiator.process(response_payload);    
 
             match result {
-                Ok(Some(challenge)) => {
+                MechanismNegotiatorResult::Challenge(challenge) => {
                     let challenge = BASE64_STANDARD.encode(challenge);
                     let xml = Element {
                         name: "challenge".to_string(),
@@ -87,17 +88,21 @@ impl SaslNegotiator {
                     };
                     stream_writer.write_xml_element(&xml).await?;
                 }
-                Ok(None) => {
+                MechanismNegotiatorResult::Success(additional_data) => {
+                    let children = match additional_data {
+                        Some(additional_data) => vec![Node::Text(BASE64_STANDARD.encode(additional_data))],
+                        None => vec![],
+                    };
                     let xml = Element {
                         name: "success".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
                         attributes: HashMap::new(),
-                        children: vec![],
+                        children,
                     };
                     stream_writer.write_xml_element(&xml).await?;
                     return Ok(AuthenticatedEntity("user".to_string(), ())); // TODO: don't hard-code username
                 }
-                Err(err) => {
+                MechanismNegotiatorResult::Failure(err) => {
                     let reason = Element {
                         name: "not-authorized".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
@@ -175,11 +180,11 @@ impl Mechanism {
         }
     }
 
-    fn negotiator(&self) -> impl MechanismNegotiator {
+    fn negotiator(&self) -> Result<impl MechanismNegotiator, Error> {
         match self {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
-            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new(),
+            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::with_credentials(),
             Mechanism::ScramSha1Plus => todo!(),
         }
     }
@@ -210,7 +215,13 @@ impl Display for Mechanism {
     }
 }
 
+enum MechanismNegotiatorResult {
+    Challenge(Vec<u8>),
+    Success(Option<Vec<u8>>),
+    Failure(Error),
+}
+
 trait MechanismNegotiator {
-    fn new() -> Self;
-    fn process(&self, payload: Vec<u8>) -> Result<Option<Vec<u8>>, Error>;
+    fn with_credentials() -> Result<Self, Error> where Self: Sized;
+    fn process(&self, payload: Vec<u8>) -> MechanismNegotiatorResult;
 }
