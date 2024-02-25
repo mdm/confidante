@@ -29,12 +29,26 @@ impl Element {
             .map(|s| s.as_str())
     }
 
+    pub fn get_child(&self, name: &str, namespace: Option<&str>) -> Option<&Element> {
+        self.children.iter().find_map(|child| match child {
+            Node::Element(element) => {
+                if element.name == name && element.namespace == namespace.map(|s| s.to_string()) {
+                    Some(element)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+    }
+
     pub fn get_text(&self) -> String {
         let mut text = String::new();
         for child in &self.children {
             match child {
+                Node::Element(element) => text.push_str(&element.get_text()),
                 Node::Text(s) => text.push_str(s),
-                // Node::CData(s) => text.push_str(s), // TODO: is this correct?
+                Node::CData(s) => text.push_str(s), // TODO: is this correct?
                 _ => {}
             }
         }

@@ -177,6 +177,7 @@ dependencies = [
  "config",
  "digest 0.10.3",
  "futures",
+ "pin-project",
  "quick-xml",
  "rand",
  "rand_chacha",
@@ -802,6 +803,26 @@ dependencies = [
  "maplit",
  "pest",
  "sha-1 0.8.2",
+]
+
+[[package]]
+name = "pin-project"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0302c4a0442c456bd56f841aee5c3bfd17967563f6fadc9ceb9f9c23cf3807e0"
+dependencies = [
+ "pin-project-internal",
+]
+
+[[package]]
+name = "pin-project-internal"
+version = "1.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "266c042b60c9c76b8d53061e52b2e0d1116abc57cefc8c5cd671619a56ac3690"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.48",
 ]
 
 [[package]]

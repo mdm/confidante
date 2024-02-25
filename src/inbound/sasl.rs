@@ -2,6 +2,7 @@ use std::{collections::HashMap, fmt::Display};
 
 use anyhow::{anyhow, bail, Error};
 use base64::prelude::*;
+use quick_xml::events::attributes;
 use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
@@ -42,16 +43,19 @@ impl SaslNegotiator {
             todo!("make sure at least one mechanism is available");
         }
 
+        let mut attributes = HashMap::new();
+        attributes.insert(("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string());
+
         Element {
             name: "mechanisms".to_string(),
             namespace: Some(namespaces::XMPP_SASL.to_string()),
-            attributes: HashMap::new(),
+            attributes,
             children: available_mechanisms,
         }
     }
 
     pub async fn authenticate<P: StreamParser, W: AsyncWrite + Unpin>(
-        &self,
+        &mut self,
         stream_parser: &mut P,
         stream_writer: &mut StreamWriter<W>,
         secure: bool,
@@ -71,7 +75,7 @@ impl SaslNegotiator {
 
         // TODO: verify mechanism is available
 
-        let negotiator = mechanism.negotiator()?; // TODO: handle error locally
+        let mut negotiator = mechanism.negotiator()?; // TODO: handle error locally
         let mut response_payload = BASE64_STANDARD.decode(auth.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
 
         loop {
@@ -223,5 +227,5 @@ enum MechanismNegotiatorResult {
 
 trait MechanismNegotiator {
     fn with_credentials() -> Result<Self, Error> where Self: Sized;
-    fn process(&self, payload: Vec<u8>) -> MechanismNegotiatorResult;
+    fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult;
 }

@@ -28,8 +28,8 @@ async fn main() -> Result<(), Error> {
             let (reader, writer) = tokio::io::split(socket);
 
             // TODO: handle constructors for parser and writer in the same way
-            let stream_parser = ConcreteStreamParser::new(reader);
-            let stream_writer = StreamWriter::new(writer);
+            let mut stream_parser = ConcreteStreamParser::new(reader);
+            let mut stream_writer = StreamWriter::new(writer);
 
             if let Err(err) = inbound_negotiator.run(&mut stream_parser, &mut stream_writer).await {
                 // TODO: move error handling out of negotiator

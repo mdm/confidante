@@ -1,12 +1,20 @@
-use anyhow::{Error, bail};
+use std::{collections::HashMap, f32::consts::E, vec};
 
-use crate::xml::stream_parser::Frame;
+use anyhow::{bail, Error};
+use tokio::io::AsyncWrite;
+use tokio_stream::StreamExt;
+
+use crate::xml::{
+    namespaces,
+    stream_parser::{Frame, StreamParser},
+    stream_writer::StreamWriter,
+    Element, Node,
+};
 
 use super::sasl::AuthenticatedEntity;
 
 #[derive(Debug)]
 pub struct BoundResource(pub String, ());
-
 
 pub struct ResourceBindingNegotiator {
     _private: (),
@@ -14,20 +22,33 @@ pub struct ResourceBindingNegotiator {
 
 impl ResourceBindingNegotiator {
     pub fn new() -> Self {
-        Self {
-            _private: (),
+        Self { _private: () }
+    }
+
+    pub fn advertise_feature(&self) -> Element {
+        // TODO: decide if this should be part of a trait
+        let mut attributes = HashMap::new();
+        attributes.insert(
+            ("xmlns".to_string(), None),
+            namespaces::XMPP_BIND.to_string(),
+        );
+
+        Element {
+            name: "bind".to_string(),
+            namespace: Some("urn:ietf:params:xml:ns:xmpp-bind".to_string()),
+            attributes,
+            children: vec![],
         }
     }
 
-    pub async fn advertise_feature(&self, session: &mut StreamInfo) -> Result<(), Error> { // TODO: decide if this should be part of a trait
-        session.write_bytes("<bind xmlns=\"urn:ietf:params:xml:ns:xmpp-bind\"/>\n".as_bytes()).await?;
-        Ok(())
-    }
-
-    pub async fn bind_resource(&self, entity: &AuthenticatedEntity, session: &mut StreamInfo) -> Result<BoundResource, Error> {
-        let iq_stanza = match session.read_frame().await? {
-            Some(Frame::XmlFragment(fragment)) => fragment,
-            _ => bail!("expected xml fragment"),
+    pub async fn bind_resource<P: StreamParser, W: AsyncWrite + Unpin>(
+        &self,
+        stream_parser: &mut P,
+        stream_writer: &mut StreamWriter<W>,
+        entity: &AuthenticatedEntity,
+    ) -> Result<BoundResource, Error> {
+        let Some(Ok(Frame::XmlFragment(iq_stanza))) = stream_parser.next().await else {
+            bail!("expected xml fragment");
         };
         dbg!(&iq_stanza);
 
@@ -43,22 +64,43 @@ impl ResourceBindingNegotiator {
             bail!("IQ stanza does not have an id");
         };
 
-        let Some(bind_request) = iq_stanza.get_child("bind", Some("urn:ietf:params:xml:ns:xmpp-bind")) else {
+        let Some(bind_request) = iq_stanza.get_child("bind", Some(namespaces::XMPP_BIND)) else {
             bail!("IQ stanza does not contain a bind request");
         };
 
-        let resource = match bind_request.get_child("resource", Some("urn:ietf:params:xml:ns:xmpp-bind")) {
-            Some(requested_resource) => requested_resource.content_str(),
-            None => uuid::Uuid::new_v4().to_string(),
-        };
+        let resource =
+            match bind_request.get_child("resource", Some(namespaces::XMPP_BIND)) {
+                Some(requested_resource) => requested_resource.get_text(),
+                None => uuid::Uuid::new_v4().to_string(),
+            };
 
         // TODO: check resource availability and maximum number of connected resources
 
-        session.write_bytes(format!("<iq id=\"{request_id}\" type=\"result\">\n").as_bytes()).await?;
-        session.write_bytes("    <bind xmlns=\"urn:ietf:params:xml:ns:xmpp-bind\">\n".as_bytes()).await?;
-        session.write_bytes(format!("        <jid>{}@localhost/{}</jid>\n", entity.0, resource).as_bytes()).await?; // TODO: don't hard-code domain
-        session.write_bytes("    </bind>\n".as_bytes()).await?;
-        session.write_bytes("</iq>\n".as_bytes()).await?;
+        let bind_response = Element {
+            name: "iq".to_string(),
+            namespace: None,
+            attributes: vec![
+                (("id".to_string(), None), request_id.to_string()),
+                (("type".to_string(), None), "result".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+            children: vec![Node::Element(Element {
+                name: "bind".to_string(),
+                namespace: Some(namespaces::XMPP_BIND.to_string()),
+                attributes: vec![
+                    (("xmlns".to_string(), None), namespaces::XMPP_BIND.to_string()),
+                ].into_iter().collect(),
+                children: vec![Node::Element(Element {
+                    name: "jid".to_string(),
+                    namespace: None,
+                    attributes: HashMap::new(),
+                    children: vec![Node::Text(format!("{}@localhost/{}", entity.0, resource))],
+                })],
+            })],
+        };
+
+        stream_writer.write_xml_element(&bind_response).await?;
 
         Ok(BoundResource(resource, ()))
     }

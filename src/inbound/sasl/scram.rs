@@ -46,7 +46,7 @@ impl MechanismNegotiator for ScramSha1Negotiator {
         Ok(Self { sasl_session })
     }
 
-    fn process(&self, payload: Vec<u8>) -> MechanismNegotiatorResult {
+    fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
         let mut do_last_step = false;
         loop {
             let mut out = Cursor::new(Vec::new());

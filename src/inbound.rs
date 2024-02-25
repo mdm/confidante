@@ -38,7 +38,7 @@ pub struct InboundStreamNegotiator<'s> {
 
 // TODO: rename to InboundStreamNegotiator and feed Result<Frame>s instead of encapsulating the socket
 impl<'s> InboundStreamNegotiator<'s> {
-    pub fn new(settings: &Settings) -> Self {
+    pub fn new(settings: &'s Settings) -> Self {
         let state = State::Connected;
         let stream_id = StreamId::new();
 
@@ -71,9 +71,9 @@ impl<'s> InboundStreamNegotiator<'s> {
                     // TODO: check if `to` is a valid domain for this server
 
                     let outbound_header = StreamHeader {
-                        from: Some(self.settings.domain),
+                        from: Some(self.settings.domain.clone()),
                         to: inbound_header.from,
-                        id: Some(self.stream_id),
+                        id: Some(self.stream_id.clone()),
                         language: None,
                     };
 
@@ -84,15 +84,14 @@ impl<'s> InboundStreamNegotiator<'s> {
                     if self.settings.tls.required_for_clients {
                         todo!();
                     } else {
-                        let sasl = SaslNegotiator::new();
+                        let mut sasl = SaslNegotiator::new();
                         let features = Element {
                             name: "features".to_string(),
                             namespace: Some(namespaces::XMPP_STREAMS.to_string()),
                             attributes: HashMap::new(),
-                            children: vec![Node::Element(sasl.advertise_feature(false, false))],
+                            children: vec![Node::Element(sasl.advertise_feature(false, false))], // TODO: advertise voluntary-to-negotiate features
                         };
-
-                        // TODO: advertise voluntary-to-negotiate features
+                        stream_writer.write_xml_element(&features).await?;
 
                         let authenticated_entity = sasl
                             .authenticate(stream_parser, stream_writer, false, false)
@@ -105,25 +104,45 @@ impl<'s> InboundStreamNegotiator<'s> {
                     todo!();
                 }
                 State::Authenticated(entity, secure) => {
-                    let to = self.session.receive_stream_header().await?;
-                    self.session.send_stream_header(&to, true).await?;
+                    let Some(Ok(frame)) = stream_parser.next().await else {
+                        bail!("expected xml frame");
+                    };
+
+                    // TODO: check "stream" namespace here or in parser?
+
+                    let Frame::StreamStart(inbound_header) = frame else {
+                        bail!("expected stream header");
+                    };
+
+                    // TODO: check if `to` is a valid domain for this server
+
+                    let outbound_header = StreamHeader {
+                        from: Some(self.settings.domain.clone()),
+                        to: inbound_header.from,
+                        id: Some(self.stream_id.clone()),
+                        language: None,
+                    };
+
+                    stream_writer
+                        .write_stream_header(&outbound_header, true)
+                        .await?;
 
                     let bind = ResourceBindingNegotiator::new();
-                    self.session
-                        .write_bytes("<stream:features>\n".as_bytes())
-                        .await?;
-                    bind.advertise_feature(&mut self.session).await?;
-                    // TODO: advertise voluntary-to-negotiate features
-                    self.session
-                        .write_bytes("</stream:features>\n".as_bytes())
-                        .await?;
-                    let bound_resource = bind.bind_resource(entity, &mut self.session).await?;
+                    let features = Element {
+                        name: "features".to_string(),
+                        namespace: Some(namespaces::XMPP_STREAMS.to_string()),
+                        attributes: HashMap::new(),
+                        children: vec![Node::Element(bind.advertise_feature())], // TODO: advertise voluntary-to-negotiate features
+                    };
+                    stream_writer.write_xml_element(&features).await?;
+
+                    let bound_resource = bind.bind_resource(stream_parser, stream_writer, entity).await?;
                     dbg!(&bound_resource);
                     self.state = State::Bound(bound_resource);
                 }
                 State::Bound(resource) => {
                     dbg!(resource);
-                    let next_frame = self.session.read_frame().await?;
+                    let next_frame = stream_parser.next().await.transpose()?;
                     dbg!(next_frame);
                     return Ok(());
                 }

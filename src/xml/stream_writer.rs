@@ -84,7 +84,8 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
    }
 
     pub async fn write_xml_element(&mut self, element: &Element) -> Result<(), Error> {
-        self.write_str(&self.build_xml_element(element)).await
+        let xml = self.build_xml_element(element);
+        self.write_str(&xml).await
     }
 
     async fn write_bytes(&mut self, bytes: &[u8]) -> Result<(), Error> {
@@ -112,7 +113,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
         None
     }
 
-    fn build_xml_element(&self, element: &Element) -> String {
+    fn build_xml_element(&mut self, element: &Element) -> String {
         let mut xml = String::new();
 
         if element.children.len() > 0 {
@@ -131,23 +132,23 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
 
         // Iterate over attributes and process namespace declarations
         let mut namespaces = HashMap::new();
-        for ((attribute, namespace), value) in element.attributes {
+        for ((attribute, namespace), value) in &element.attributes {
             match namespace {
                 Some(namespace) => {
                     if namespace == namespaces::XMLNS {
-                        namespaces.insert(value, attribute); // prefixed namespace
+                        namespaces.insert(value.clone(), attribute.clone()); // prefixed namespace
                     }
                 }
                 None => {
                     if attribute == "xmlns" {
-                        namespaces.insert(value, String::new()); // default namespace
+                        namespaces.insert(value.clone(), String::new()); // default namespace
                     }
                 }
             }
         }
         self.namespaces.push(namespaces);
 
-        match element.namespace {
+        match &element.namespace {
             Some(namespace) => match self.lookup_namespace_prefix(&namespace) {
                 Some("") => {
                     // Element is in the default namespace
@@ -194,7 +195,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
     fn build_attributes(&self, element: &Element) -> String {
         let mut xml = String::new();
 
-        for ((attribute, namespace), value) in element.attributes {
+        for ((attribute, namespace), value) in &element.attributes {
             match namespace {
                 Some(namespace) => match self.lookup_namespace_prefix(&namespace) {
                     Some("") => {

@@ -3,7 +3,7 @@ use rand::{RngCore, SeedableRng};
 
 use super::jid::Jid;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StreamId(String);
 
 impl StreamId {

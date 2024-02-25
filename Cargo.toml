@@ -25,3 +25,4 @@ tokio-stream = "0.1.14"
 uuid = { version = "1.2.2", features = ["v4"] }
 regex = "1.10.2"
 serde_with = "3.6.0"
+pin-project = "1.1.4"

@@ -2,13 +2,14 @@ use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
 use anyhow::{anyhow, Error};
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
+use pin_project::pin_project;
 use rustyxml::{Element as RustyXmlElement, ElementBuilder, Event, Parser};
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio_stream::Stream;
 
 use crate::xml::stream_parser::{Frame, StreamHeader};
-use crate::xml::Element;
+use crate::xml::{Element, Node};
 use crate::xmpp::stream_header::LanguageTag;
 
 fn valid_stream_tag(name: &String, namespace: &Option<String>) -> bool {
@@ -24,10 +25,20 @@ fn valid_stream_tag(name: &String, namespace: &Option<String>) -> bool {
 
 impl From<RustyXmlElement> for Element {
     fn from(element: RustyXmlElement) -> Self {
-        let name;
-        let namespace;
-        let attributes;
-        let children;
+        let name = element.name;
+        let namespace = element.ns;
+        let attributes = element.attributes;
+        let children = element
+            .children
+            .into_iter()
+            .map(|child| match child {
+                rustyxml::Xml::ElementNode(element) => Node::Element(Element::from(element)),
+                rustyxml::Xml::CharacterNode(text) => Node::Text(text),
+                rustyxml::Xml::CDATANode(cdata) => Node::CData(cdata),
+                rustyxml::Xml::CommentNode(comment) => Node::Comment(comment),
+                rustyxml::Xml::PINode(pi) => Node::ProcessingInstruction(pi),
+            })
+            .collect();
 
         Element {
             name,
@@ -38,18 +49,20 @@ impl From<RustyXmlElement> for Element {
     }
 }
 
-pub struct StreamParser<'a, R: AsyncRead + Unpin> {
+#[pin_project]
+pub struct StreamParser<R: AsyncRead + Unpin> {
+    #[pin]
     reader: R,
-    buffer: ReadBuf<'a>,
+    buffer: BytesMut,
     parser: Parser,
     element_builder: ElementBuilder,
 }
 
-impl<'a, R: AsyncRead + Unpin> super::StreamParser for StreamParser<'a, R> {
+impl<R: AsyncRead + Unpin> super::StreamParser for StreamParser<R> {
     type Reader = R;
     
     fn new(reader: R) -> Self {
-        let buffer = ReadBuf::new(&mut BytesMut::with_capacity(4096));
+        let buffer = BytesMut::with_capacity(4096);
         let parser = Parser::new();
         let element_builder = ElementBuilder::new();
 
@@ -66,76 +79,78 @@ impl<'a, R: AsyncRead + Unpin> super::StreamParser for StreamParser<'a, R> {
     }
 }
 
-impl<'a, R: AsyncRead + Unpin> Stream for StreamParser<'a, R> {
+impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
     type Item = Result<Frame, Error>;
 
     fn poll_next(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Error>>> {
-        loop {
-            // TODO: don't use for loop here - does it matter? (we return in both match arms)
-            for parser_result in &mut self.parser {
-                match parser_result {
-                    Ok(Event::ElementStart(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
-                        dbg!(&tag.ns, &tag.attributes);
-                        let header = StreamHeader {
-                            from: tag
-                                .attributes
-                                .get(&("from".to_string(), None))
-                                .and_then(|jid| jid.parse().ok()),
-                            to: tag
-                                .attributes
-                                .get(&("to".to_string(), None))
-                                .and_then(|jid| jid.parse().ok()),
-                            id: None,
-                            language: tag
-                                .attributes
-                                .get(&("xml:lang".to_string(), None))
-                                .map(|lang| LanguageTag(lang.to_string())),
-                        };
-                        return Poll::Ready(Some(Ok(Frame::StreamStart(header))));
-                    }
-                    Ok(Event::ElementEnd(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
-                        // TODO: reset parser & builder? discard data at least
-                        return Poll::Ready(Some(Ok(Frame::StreamEnd)));
-                    }
-                    Err(err) => {
-                        // TODO: detect incomplete parses? or are those not even returned by the iterator?
-                        dbg!("parser error");
-                        return Poll::Ready(Some(Err(anyhow!(err))));
-                    }
-                    _ => {}
-                }
-
-                if let Some(builder_result) = self.element_builder.handle_event(parser_result) {
-                    let frame_result = match builder_result {
-                        Ok(element) => Some(Ok(Frame::XmlFragment(element.into()))),
-                        Err(err) => Some(Err(anyhow!(err))),
+        let mut this = self.project();
+        if let Some(parser_result) = this.parser.next() {
+            match parser_result {
+                Ok(Event::ElementStart(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
+                    dbg!(&tag.ns, &tag.attributes);
+                    let header = StreamHeader {
+                        from: tag
+                            .attributes
+                            .get(&("from".to_string(), None))
+                            .and_then(|jid| jid.parse().ok()),
+                        to: tag
+                            .attributes
+                            .get(&("to".to_string(), None))
+                            .and_then(|jid| jid.parse().ok()),
+                        id: None,
+                        language: tag
+                            .attributes
+                            .get(&("xml:lang".to_string(), None))
+                            .map(|lang| LanguageTag(lang.to_string())),
                     };
-                    return Poll::Ready(frame_result);
+                    return Poll::Ready(Some(Ok(Frame::StreamStart(header))));
                 }
-            }
-
-            ready!(Pin::new(&mut self.reader).poll_read(cx, &mut self.buffer))?;
-            let bytes_read = self.buffer.filled().len();
-
-            if bytes_read == 0 {
-                return Poll::Ready(None);
-            }
-
-            match std::str::from_utf8(&self.buffer.filled()) {
-                Ok(str) => {
-                    println!("{}", str);
-                    self.parser.feed_str(str);
+                Ok(Event::ElementEnd(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
+                    // TODO: reset parser & builder? discard data at least
+                    return Poll::Ready(Some(Ok(Frame::StreamEnd)));
                 }
                 Err(err) => {
-                    dbg!("utf8 error");
+                    // TODO: detect incomplete parses? or are those not even returned by the iterator?
+                    dbg!("parser error");
                     return Poll::Ready(Some(Err(anyhow!(err))));
                 }
+                _ => {}
             }
 
-            self.buffer.clear();
+            if let Some(builder_result) = this.element_builder.handle_event(parser_result) {
+                let frame_result = match builder_result {
+                    Ok(element) => Some(Ok(Frame::XmlFragment(element.into()))),
+                    Err(err) => Some(Err(anyhow!(err))),
+                };
+                return Poll::Ready(frame_result);
+            }
         }
+
+        let mut buffer = ReadBuf::new(this.buffer);
+        ready!(this.reader.poll_read(cx, &mut buffer))?;
+        let bytes_read = buffer.filled().len();
+
+        if bytes_read == 0 {
+            return Poll::Ready(None);
+        }
+
+        match std::str::from_utf8(buffer.filled()) {
+            Ok(str) => {
+                println!("{}", str);
+                this.parser.feed_str(str);
+            }
+            Err(err) => {
+                dbg!("utf8 error");
+                return Poll::Ready(Some(Err(anyhow!(err))));
+            }
+        }
+
+        this.buffer.clear();
+
+        cx.waker().wake_by_ref();
+        Poll::Pending
     }
 }
