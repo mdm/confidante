@@ -81,7 +81,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
 
         let closing_tag = self.build_closing_tag(&stream_element);
         self.write_str(&closing_tag).await
-   }
+    }
 
     pub async fn write_xml_element(&mut self, element: &Element) -> Result<(), Error> {
         let xml = self.build_xml_element(element);
@@ -96,6 +96,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
     }
 
     async fn write_str(&mut self, string: &str) -> Result<(), Error> {
+        dbg!(string);
         self.write_bytes(string.as_bytes()).await
     }
 
@@ -116,12 +117,12 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
     fn build_xml_element(&mut self, element: &Element) -> String {
         let mut xml = String::new();
 
-        if element.children.len() > 0 {
-            self.build_opening_tag(element, false);
-            self.build_children(element);
-            self.build_closing_tag(element);
+        if !element.children.is_empty() {
+            xml.push_str(&self.build_opening_tag(element, false));
+            xml.push_str(&self.build_children(element));
+            xml.push_str(&self.build_closing_tag(element));
         } else {
-            self.build_opening_tag(element, true);
+            xml.push_str(&self.build_opening_tag(element, true));
         }
 
         xml
@@ -149,13 +150,13 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
         self.namespaces.push(namespaces);
 
         match &element.namespace {
-            Some(namespace) => match self.lookup_namespace_prefix(&namespace) {
+            Some(namespace) => match self.lookup_namespace_prefix(namespace) {
                 Some("") => {
                     // Element is in the default namespace
                     xml.push_str(&format!(
                         "<{}{}",
                         element.name,
-                        self.build_attributes(&element)
+                        self.build_attributes(element)
                     ));
                 }
                 Some(prefix) => {
@@ -164,7 +165,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
                         "<{}:{}{}",
                         prefix,
                         element.name,
-                        self.build_attributes(&element)
+                        self.build_attributes(element)
                     ));
                 }
                 None => {
@@ -176,7 +177,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
                 xml.push_str(&format!(
                     "<{}{}",
                     element.name,
-                    self.build_attributes(&element)
+                    self.build_attributes(element)
                 ));
             }
         }
@@ -186,7 +187,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
 
             xml.push_str("/>");
         } else {
-            xml.push_str(">");
+            xml.push('>');
         }
 
         xml
@@ -246,8 +247,30 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
     }
 
     fn build_closing_tag(&mut self, element: &Element) -> String {
+        let mut xml = String::new();
+
+        match &element.namespace {
+            Some(namespace) => match self.lookup_namespace_prefix(namespace) {
+                Some("") => {
+                    // Element is in the default namespace
+                    xml.push_str(&format!("</{}>", element.name));
+                }
+                Some(prefix) => {
+                    // Element is in a prefixed namespace
+                    xml.push_str(&format!("</{}:{}>", prefix, element.name));
+                }
+                None => {
+                    debug_assert!(false, "namespace not declared");
+                    // TODO: declare namespace with generated prefix and write anyways
+                }
+            },
+            None => {
+                xml.push_str(&format!("</{}>", element.name));
+            }
+        }
+
         self.namespaces.pop();
 
-        format!("</{}>", element.name)
+        xml
     }
 }

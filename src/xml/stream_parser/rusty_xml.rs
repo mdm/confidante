@@ -53,7 +53,7 @@ impl From<RustyXmlElement> for Element {
 pub struct StreamParser<R: AsyncRead + Unpin> {
     #[pin]
     reader: R,
-    buffer: BytesMut,
+    buffer: Box<[u8]>,
     parser: Parser,
     element_builder: ElementBuilder,
 }
@@ -62,7 +62,7 @@ impl<R: AsyncRead + Unpin> super::StreamParser for StreamParser<R> {
     type Reader = R;
     
     fn new(reader: R) -> Self {
-        let buffer = BytesMut::with_capacity(4096);
+        let buffer = vec![0; 4096].into_boxed_slice();
         let parser = Parser::new();
         let element_builder = ElementBuilder::new();
 
@@ -86,8 +86,9 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Error>>> {
+        println!("polling parser");
         let mut this = self.project();
-        if let Some(parser_result) = this.parser.next() {
+        while let Some(parser_result) = dbg!(this.parser.next()) {
             match parser_result {
                 Ok(Event::ElementStart(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
                     dbg!(&tag.ns, &tag.attributes);
@@ -148,7 +149,7 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
             }
         }
 
-        this.buffer.clear();
+        buffer.clear();
 
         cx.waker().wake_by_ref();
         Poll::Pending

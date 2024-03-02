@@ -87,7 +87,9 @@ impl SaslNegotiator {
                     let xml = Element {
                         name: "challenge".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
-                        attributes: HashMap::new(),
+                        attributes: vec![
+                            (("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string()),
+                        ].into_iter().collect(),
                         children: vec![Node::Text(challenge)],
                     };
                     stream_writer.write_xml_element(&xml).await?;
@@ -100,7 +102,9 @@ impl SaslNegotiator {
                     let xml = Element {
                         name: "success".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
-                        attributes: HashMap::new(),
+                        attributes: vec![
+                            (("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string()),
+                        ].into_iter().collect(),
                         children,
                     };
                     stream_writer.write_xml_element(&xml).await?;
@@ -116,7 +120,9 @@ impl SaslNegotiator {
                     let xml = Element {
                         name: "failure".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
-                        attributes: HashMap::new(),
+                        attributes: vec![
+                            (("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string()),
+                        ].into_iter().collect(),
                         children: vec![Node::Element(reason)],
                     };
                     stream_writer.write_xml_element(&xml).await?;

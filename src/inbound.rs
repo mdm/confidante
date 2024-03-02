@@ -1,5 +1,4 @@
 mod bind;
-mod connection;
 mod sasl;
 mod tls;
 
@@ -58,7 +57,7 @@ impl<'s> InboundStreamNegotiator<'s> {
             // TODO: handle timeouts while waiting for next frame
             match &self.state {
                 State::Connected => {
-                    let Some(Ok(frame)) = stream_parser.next().await else {
+                    let Some(Ok(frame)) = dbg!(stream_parser.next().await) else {
                         bail!("expected xml frame");
                     };
 
@@ -91,6 +90,7 @@ impl<'s> InboundStreamNegotiator<'s> {
                             attributes: HashMap::new(),
                             children: vec![Node::Element(sasl.advertise_feature(false, false))], // TODO: advertise voluntary-to-negotiate features
                         };
+                        dbg!(&features);
                         stream_writer.write_xml_element(&features).await?;
 
                         let authenticated_entity = sasl
@@ -104,7 +104,7 @@ impl<'s> InboundStreamNegotiator<'s> {
                     todo!();
                 }
                 State::Authenticated(entity, secure) => {
-                    let Some(Ok(frame)) = stream_parser.next().await else {
+                    let Some(Ok(frame)) = dbg!(stream_parser.next().await) else {
                         bail!("expected xml frame");
                     };
 
@@ -164,7 +164,9 @@ impl<'s> InboundStreamNegotiator<'s> {
             children: vec![Node::Element(Element {
                 name: "internal-server-error".to_string(),
                 namespace: Some(namespaces::XMPP_STREAM_ERRORS.to_string()),
-                attributes: HashMap::new(),
+                attributes: vec![
+                    (("xmlns".to_string(), None), namespaces::XMPP_STREAM_ERRORS.to_string()),
+                ].into_iter().collect(),
                 children: vec![],
             })],
         };

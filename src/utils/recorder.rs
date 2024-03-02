@@ -1,28 +1,23 @@
 use std::{
-    path::Path,
     pin::Pin,
     task::{ready, Poll},
 };
 
-use anyhow::{bail, Error};
-use bytes::BufMut;
+use bytes::{Buf, BufMut, BytesMut};
 use tokio::{
-    fs::File,
+    fs::{File, OpenOptions},
     io::{AsyncRead, AsyncWrite, BufWriter, ReadBuf},
 };
 use uuid::Uuid;
 
 const BUFFER_SIZE: usize = 1024;
-pub struct StreamRecorder<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    pub uuid: Uuid,
+
+pub struct StreamRecorder<S> {
     inner_stream: S,
     read_done: bool,
     write_done: bool,
-    input_recording: BufWriter<File>,
-    output_recording: BufWriter<File>,
+    input_recording: File,
+    output_recording: File,
     input_buffer: Box<[u8]>,
     input_buffer_read: usize,
     input_buffer_written: usize,
@@ -36,24 +31,20 @@ where
     output_recording_done: bool,
 }
 
-impl<S> StreamRecorder<S>
-where
-    S: AsyncRead + AsyncWrite + Unpin,
-{
-    pub async fn try_new(wrapped_stream: S, path: &Path) -> Result<Self, Error> {
-        if !path.is_dir() {
-            bail!("path is not a directory");
-        }
-
-        let uuid = Uuid::new_v4();
-        let input_recording_path = path.join(format!("{uuid}.in.xml"));
-        let output_recording_path = path.join(format!("{uuid}.out.xml"));
-
-        let input_recording = BufWriter::new(File::create(input_recording_path).await?);
-        let output_recording = BufWriter::new(File::create(output_recording_path).await?);
+impl<S> StreamRecorder<S> {
+    pub async fn try_new(wrapped_stream: S, uuid: &Uuid) -> std::io::Result<Self> {
+        let input_recording = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&format!("log/{uuid}.in.xml"))
+            .await?;
+        let output_recording = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&format!("log/{uuid}.out.xml"))
+            .await?;
 
         Ok(Self {
-            uuid,
             inner_stream: wrapped_stream,
             read_done: false,
             write_done: false,
@@ -76,7 +67,7 @@ where
 
 impl<S> AsyncRead for StreamRecorder<S>
 where
-    S: AsyncRead + AsyncWrite + Unpin, // TODO: remove unneeded?
+    S: AsyncRead + Unpin, // TODO: remove unneeded?
 {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -89,7 +80,7 @@ where
             if me.input_buffer_written == me.input_buffer_read && !me.read_done {
                 me.input_buffer_read = 0;
                 me.input_buffer_written = 0;
-                let mut input_buffer = ReadBuf::new(&mut me.input_buffer);
+                let mut input_buffer = ReadBuf::new(me.input_buffer.as_mut());
                 // input_buffer.set_filled(self.input_buffer_read);
 
                 match Pin::new(&mut me.inner_stream).poll_read(cx, &mut input_buffer) {
@@ -137,13 +128,13 @@ where
 
 impl<S> AsyncWrite for StreamRecorder<S>
 where
-    S: AsyncRead + AsyncWrite + Unpin, // TODO: remove unneeded?
+    S: AsyncWrite + Unpin, // TODO: remove unneeded?
 {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
         buf: &[u8],
-    ) -> Poll<Result<usize, std::io::Error>> {
+    ) -> Poll<std::io::Result<usize>> {
         let me = &mut *self;
 
         if me.output_bytes_written == me.output_bytes_recorded {
@@ -151,7 +142,9 @@ where
             me.output_bytes_recorded = 0;
 
             let num_bytes_to_write = std::cmp::min(buf.len(), me.output_buffer.len());
-            let num_bytes_written = ready!(Pin::new(&mut me.inner_stream).poll_write(cx, &buf[..num_bytes_to_write]))?;
+            let num_bytes_written =
+                ready!(Pin::new(&mut me.inner_stream).poll_write(cx, &buf[..num_bytes_to_write]))?;
+
             me.output_buffer
                 .as_mut()
                 .put_slice(&buf[..num_bytes_written]);
@@ -237,6 +230,7 @@ where
 #[cfg(test)]
 mod tests {
     use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+    use uuid::Uuid;
 
     use super::{StreamRecorder, BUFFER_SIZE};
 
@@ -248,12 +242,10 @@ mod tests {
 
         let data = original_data.clone();
 
-        let (rx, mut tx) = duplex(1000);
-        let mut recorder = StreamRecorder::try_new(rx, std::env::temp_dir().as_path())
-            .await
-            .unwrap();
+        let uuid = Uuid::new_v4();
 
-        let uuid = recorder.uuid.to_string();
+        let (rx, mut tx) = duplex(1000);
+        let mut recorder = StreamRecorder::try_new(rx, &uuid).await.unwrap();
 
         let write = tokio::spawn(async move {
             tx.write_all(&data).await.unwrap();
@@ -275,9 +267,10 @@ mod tests {
         write.await.unwrap();
         read.await.unwrap();
 
-        let recording = std::env::temp_dir().join(format!("{uuid}.in.xml"));
+        let recording = format!("log/{uuid}.in.xml");
         let recorded_data = std::fs::read(&recording).unwrap();
         std::fs::remove_file(&recording).unwrap();
+        std::fs::remove_file(format!("log/{uuid}.out.xml")).unwrap();
 
         assert_eq!(recorded_data.len(), original_data.len());
         assert!(recorded_data
@@ -286,20 +279,21 @@ mod tests {
             .all(|(a, b)| a == b));
     }
 
-    
-    async fn written_bytes_are_recorded(data_len: usize, duplex_buf_size: usize, read_buf_size: usize) {
+    async fn written_bytes_are_recorded(
+        data_len: usize,
+        duplex_buf_size: usize,
+        read_buf_size: usize,
+    ) {
         let original_data = (0..data_len)
             .map(|_| rand::random::<u8>())
             .collect::<Vec<_>>();
 
         let data = original_data.clone();
 
-        let (mut rx, tx) = duplex(duplex_buf_size);
-        let mut recorder = StreamRecorder::try_new(tx, std::env::temp_dir().as_path())
-            .await
-            .unwrap();
+        let uuid = Uuid::new_v4();
 
-        let uuid = recorder.uuid.to_string();
+        let (mut rx, tx) = duplex(duplex_buf_size);
+        let mut recorder = StreamRecorder::try_new(tx, &uuid).await.unwrap();
 
         let write = tokio::spawn(async move {
             recorder.write_all(&data).await.unwrap();
@@ -320,9 +314,10 @@ mod tests {
         write.await.unwrap();
         read.await.unwrap();
 
-        let recording = std::env::temp_dir().join(format!("{uuid}.out.xml"));
+        let recording = format!("log/{uuid}.out.xml");
         let recorded_data = std::fs::read(&recording).unwrap();
         std::fs::remove_file(&recording).unwrap();
+        std::fs::remove_file(format!("log/{uuid}.in.xml")).unwrap();
 
         assert_eq!(recorded_data.len(), original_data.len());
         assert!(recorded_data
