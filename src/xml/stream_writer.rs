@@ -92,6 +92,11 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
         self.writer
             .write_all(bytes)
             .await
+            .map_err(|err| anyhow!(err))?;
+
+        self.writer
+            .flush()
+            .await
             .map_err(|err| anyhow!(err))
     }
 

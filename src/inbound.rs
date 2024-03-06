@@ -142,8 +142,7 @@ impl<'s> InboundStreamNegotiator<'s> {
                 }
                 State::Bound(resource) => {
                     dbg!(resource);
-                    let next_frame = stream_parser.next().await.transpose()?;
-                    dbg!(next_frame);
+                    // TODO: return stream info
                     return Ok(());
                 }
             }
