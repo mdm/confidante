@@ -17,10 +17,10 @@ fn valid_stream_tag(name: &String, namespace: &Option<String>) -> bool {
         return false;
     }
 
-    return match namespace {
+    match namespace {
         Some(uri) => uri == "http://etherx.jabber.org/streams",
         None => false,
-    };
+    }
 }
 
 impl From<RustyXmlElement> for Element {
@@ -88,7 +88,7 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
     ) -> Poll<Option<Result<Frame, Error>>> {
         println!("polling parser");
         let mut this = self.project();
-        while let Some(parser_result) = dbg!(this.parser.next()) {
+        while let Some(parser_result) = this.parser.next() {
             match parser_result {
                 Ok(Event::ElementStart(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
                     dbg!(&tag.ns, &tag.attributes);
@@ -111,7 +111,7 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
                 }
                 Ok(Event::ElementEnd(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
                     // TODO: reset parser & builder? discard data at least
-                    return Poll::Ready(Some(Ok(Frame::StreamEnd)));
+                    return Poll::Ready(None);
                 }
                 Err(err) => {
                     // TODO: detect incomplete parses? or are those not even returned by the iterator?

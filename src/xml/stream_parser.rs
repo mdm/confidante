@@ -12,8 +12,7 @@ pub mod rusty_xml;
 pub enum Frame {
     StreamStart(StreamHeader),
     XmlFragment(Element),
-    StreamEnd, // TODO: make implicit? (just return None instead of Some(StreamEnd)
-               // TODO: Variant for character data (e.g. whitespace keep-alive)git d
+    // TODO: Variant for character data (e.g. whitespace keep-alive)
 }
 
 pub trait StreamParser: Stream<Item = Result<Frame, Error>> + Unpin {

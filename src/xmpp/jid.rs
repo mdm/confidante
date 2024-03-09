@@ -38,6 +38,24 @@ pub struct Jid {
     resource: Option<ResourcePart>,
 }
 
+impl Jid {
+    pub fn new(local: Option<String>, domain: String, resource: Option<String>) -> Self {
+        Jid {
+            local: local.map(LocalPart),
+            domain: DomainPart(domain),
+            resource: resource.map(ResourcePart),
+        }
+    }
+
+    pub fn bind(&self, resource: String) -> Self {
+        Jid {
+            local: self.local.clone(),
+            domain: self.domain.clone(),
+            resource: Some(ResourcePart(resource)),
+        }
+    }
+}
+
 impl FromStr for Jid {
     type Err = Error;
 

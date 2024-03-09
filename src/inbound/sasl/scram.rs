@@ -13,6 +13,8 @@ use rsasl::{
 };
 use sha1::Sha1;
 
+use crate::xmpp::jid::Jid;
+
 use super::{MechanismNegotiator, MechanismNegotiatorResult};
 
 pub struct ScramSha1Negotiator {
@@ -84,8 +86,14 @@ impl MechanismNegotiator for ScramSha1Negotiator {
                         ));
                     };
 
+                    let jid = Jid::new(
+                        Some(entity),
+                        "localhost".to_string(),
+                        None,
+                    );
+
                     return MechanismNegotiatorResult::Success(
-                        additional_data.map(|_| out.into_inner()),
+                        jid, additional_data.map(|_| out.into_inner()),
                     );
                 }
             }

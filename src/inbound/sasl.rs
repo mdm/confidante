@@ -6,7 +6,7 @@ use quick_xml::events::attributes;
 use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
-use crate::xml::{namespaces, stream_parser::{Frame, StreamParser}, stream_writer::StreamWriter, Element, Node};
+use crate::{xml::{namespaces, stream_parser::{Frame, StreamParser}, stream_writer::StreamWriter, Element, Node}, xmpp::jid::Jid};
 
 mod scram;
 
@@ -60,7 +60,7 @@ impl SaslNegotiator {
         stream_writer: &mut StreamWriter<W>,
         secure: bool,
         authenticated: bool,
-    ) -> Result<AuthenticatedEntity, Error> {
+    ) -> Result<Jid, Error> {
         let Some(Ok(Frame::XmlFragment(auth))) = stream_parser.next().await else {
             bail!("expected xml fragment");
         };
@@ -94,7 +94,7 @@ impl SaslNegotiator {
                     };
                     stream_writer.write_xml_element(&xml).await?;
                 }
-                MechanismNegotiatorResult::Success(additional_data) => {
+                MechanismNegotiatorResult::Success(jid, additional_data) => {
                     let children = match additional_data {
                         Some(additional_data) => vec![Node::Text(BASE64_STANDARD.encode(additional_data))],
                         None => vec![],
@@ -108,7 +108,7 @@ impl SaslNegotiator {
                         children,
                     };
                     stream_writer.write_xml_element(&xml).await?;
-                    return Ok(AuthenticatedEntity("user".to_string(), ())); // TODO: don't hard-code username
+                    return Ok(jid);
                 }
                 MechanismNegotiatorResult::Failure(err) => {
                     let reason = Element {
@@ -227,7 +227,7 @@ impl Display for Mechanism {
 
 enum MechanismNegotiatorResult {
     Challenge(Vec<u8>),
-    Success(Option<Vec<u8>>),
+    Success(Jid, Option<Vec<u8>>),
     Failure(Error),
 }
 

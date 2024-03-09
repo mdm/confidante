@@ -4,12 +4,12 @@ use anyhow::{bail, Error};
 use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
-use crate::xml::{
+use crate::{xml::{
     namespaces,
     stream_parser::{Frame, StreamParser},
     stream_writer::StreamWriter,
     Element, Node,
-};
+}, xmpp::jid::Jid};
 
 use super::sasl::AuthenticatedEntity;
 
@@ -45,8 +45,8 @@ impl ResourceBindingNegotiator {
         &self,
         stream_parser: &mut P,
         stream_writer: &mut StreamWriter<W>,
-        entity: &AuthenticatedEntity,
-    ) -> Result<BoundResource, Error> {
+        entity: &Jid,
+    ) -> Result<Jid, Error> {
         let Some(Ok(Frame::XmlFragment(iq_stanza))) = stream_parser.next().await else {
             bail!("expected xml fragment");
         };
@@ -76,6 +76,8 @@ impl ResourceBindingNegotiator {
 
         // TODO: check resource availability and maximum number of connected resources
 
+        let bound_entity = entity.bind(resource);
+
         let bind_response = Element {
             name: "iq".to_string(),
             namespace: None,
@@ -95,13 +97,13 @@ impl ResourceBindingNegotiator {
                     name: "jid".to_string(),
                     namespace: None,
                     attributes: HashMap::new(),
-                    children: vec![Node::Text(format!("{}@localhost/{}", entity.0, resource))],
+                    children: vec![Node::Text(format!("{}", bound_entity))],
                 })],
             })],
         };
 
         stream_writer.write_xml_element(&bind_response).await?;
 
-        Ok(BoundResource(resource, ()))
+        Ok(bound_entity)
     }
 }
