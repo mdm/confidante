@@ -12,17 +12,20 @@ bytes = "1.1.0"
 config = { version = "0.13.1", features = ["yaml"] }
 digest = "0.10.3"
 futures = "0.3.19"
+pin-project = "1.1.4"
 quick-xml = "0.31.0"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
+regex = "1.10.2"
+rustls = "0.23.1"
 rsasl = { version = "2.0.0-preview10", features = ["provider"] }
 rustyxml = { package = "RustyXML", version = "0.3.0" }
 sha1 = "0.10.1"
 serde = { version = "1.0.137", features = ["derive"] }
+serde_with = "3.6.0"
 thiserror = "1.0.32"
 tokio = { version = "1.18.1", features = ["full"] }
+tokio-rustls = "0.25.0"
 tokio-stream = "0.1.14"
 uuid = { version = "1.2.2", features = ["v4"] }
-regex = "1.10.2"
-serde_with = "3.6.0"
-pin-project = "1.1.4"
+rustls-native-certs = "0.7.0"

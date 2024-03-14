@@ -1,7 +1,3 @@
-mod bind;
-mod sasl;
-mod tls;
-
 use std::collections::HashMap;
 
 use anyhow::{anyhow, Error};
@@ -24,7 +20,11 @@ use crate::{
 use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
 
-#[derive(Debug, Clone)]
+mod bind;
+mod connection;
+mod sasl;
+mod tls;
+
 enum State {
     Connected(StreamId), // TODO: do we need a consumable token here?
     Secured(StreamId),   // TODO: do we need the proof token here?
