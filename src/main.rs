@@ -50,8 +50,8 @@ async fn main() -> Result<(), Error> {
             let (reader, writer) = tokio::io::split(socket);
             let log_id = Uuid::new_v4();
             println!("New connection: {}", log_id);
-            let reader = StreamRecorder::try_new(reader, &log_id).await.unwrap();
-            let writer = StreamRecorder::try_new(writer, &log_id).await.unwrap();
+            let reader = StreamRecorder::try_new(reader, log_id).await.unwrap();
+            let writer = StreamRecorder::try_new(writer, log_id).await.unwrap();
 
             let mut stream_parser = ConcreteStreamParser::new(reader);
             let mut stream_writer = StreamWriter::new(writer);
