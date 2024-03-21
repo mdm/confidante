@@ -13,7 +13,7 @@ use crate::utils::recorder::StreamRecorder;
 
 use super::Connection;
 
-struct DebugConnection<C>
+pub struct DebugConnection<C>
 where
     C: Connection,
 {
@@ -31,13 +31,18 @@ where
 
         Ok(DebugConnection { uuid, recorder })
     }
+
+    pub fn uuid(&self) -> Uuid {
+        self.uuid
+    }
 }
 
 impl<C> Connection for DebugConnection<C>
 where
-    C: Connection,
-    C::Upgrade: Future<Output = Result<C, Error>> + 'static,
+    C: Connection + Send + 'static,
+    C::Upgrade: Future<Output = Result<C, Error>> + Send + 'static,
 {
+    type Me = Self;
     type Upgrade = DebugConnectionUpgrade<C>;
 
     fn upgrade(
@@ -47,6 +52,10 @@ where
     ) -> Result<Self::Upgrade, Error> {
         let upgrade = self.recorder.into_inner().upgrade(cert_chain, key_der)?;
         Ok(DebugConnectionUpgrade::new(Box::pin(upgrade), self.uuid))
+    }
+
+    fn is_starttls_allowed(&self) -> bool {
+        self.recorder.get_ref().is_starttls_allowed()
     }
 
     fn is_secure(&self) -> bool {
@@ -102,25 +111,28 @@ enum DebugConnectionUpgradeState<C>
 where
     C: Connection,
 {
-    Upgrading(Uuid, Pin<Box<dyn Future<Output = Result<C, Error>>>>),
+    Upgrading(Uuid, Pin<Box<dyn Future<Output = Result<C, Error>> + Send>>),
     ConstructingRecorder(
         Uuid,
-        Pin<Box<dyn Future<Output = std::io::Result<StreamRecorder<C>>>>>,
+        Pin<Box<dyn Future<Output = std::io::Result<StreamRecorder<C>>> + Send>>,
     ),
 }
 
-struct DebugConnectionUpgrade<C>
+pub struct DebugConnectionUpgrade<C>
 where
-    C: Connection,
+    C: Connection + Send,
 {
     state: DebugConnectionUpgradeState<C>,
 }
 
 impl<C> DebugConnectionUpgrade<C>
 where
-    C: Connection,
+    C: Connection + Send,
 {
-    pub fn new(upgrade: Pin<Box<dyn Future<Output = Result<C, Error>>>>, uuid: Uuid) -> Self {
+    pub fn new(
+        upgrade: Pin<Box<dyn Future<Output = Result<C, Error>> + Send>>,
+        uuid: Uuid,
+    ) -> Self {
         let state = DebugConnectionUpgradeState::Upgrading(uuid, upgrade);
         DebugConnectionUpgrade { state }
     }
@@ -128,7 +140,7 @@ where
 
 impl<C> Future for DebugConnectionUpgrade<C>
 where
-    C: Connection + 'static,
+    C: Connection + Send + 'static,
 {
     type Output = Result<DebugConnection<C>, Error>;
 

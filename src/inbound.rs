@@ -1,11 +1,14 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, Error};
+use anyhow::{anyhow, bail, Error};
 use futures::stream;
+use quick_xml::writer;
+use tokio::io::WriteHalf;
 use tokio::{io::AsyncWrite, net::TcpStream};
 use tokio_stream::StreamExt;
 
 use crate::xml::namespaces;
+use crate::xml::stream_parser::rusty_xml::StreamParser as ConcreteStreamParser;
 use crate::xmpp::jid::Jid;
 use crate::xmpp::stream_header::{StreamHeader, StreamId};
 use crate::{
@@ -17,17 +20,19 @@ use crate::{
     },
 };
 
+use self::connection::Connection;
 use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
+use starttls::StarttlsNegotiator;
 
 mod bind;
-mod connection;
+pub mod connection;
 mod sasl;
-mod tls;
+mod starttls;
 
 enum State {
-    Connected(StreamId), // TODO: do we need a consumable token here?
-    Secured(StreamId),   // TODO: do we need the proof token here?
+    Connected(StreamId),     // TODO: do we need a consumable token here?
+    Secured(StreamId, bool), // TODO: do we need the proof token here?
     Authenticated(StreamId, Jid),
     Bound(StreamId, Jid),
 }
@@ -42,55 +47,53 @@ impl<'s> InboundStreamNegotiator<'s> {
         Self { settings }
     }
 
-    pub async fn run<P: StreamParser, W: AsyncWrite + Unpin>(
+    pub async fn run<C: Connection<Me = C>>(
         &mut self,
-        stream_parser: &mut P,
-        stream_writer: &mut StreamWriter<W>,
-    ) -> Option<Jid> {
+        socket: C,
+    ) -> Option<(Jid, impl StreamParser, StreamWriter<WriteHalf<C>>)> {
+        // TODO: return Result instead of Option, to be able to close connection without closing the stream on TLS handshake error
+        let starttls_allowed = socket.is_starttls_allowed();
+        let (reader, writer) = tokio::io::split(socket);
+        let mut stream_parser = ConcreteStreamParser::new(reader);
+        let mut stream_writer = StreamWriter::new(writer);
+
         let mut state = State::Connected(StreamId::new());
 
         loop {
             // TODO: handle timeouts while waiting for next frame
             state = match state {
                 State::Connected(stream_id) => {
-                    let Ok(frame) = stream_parser.next().await? else {
-                        self.send_stream_header(stream_writer, None, stream_id)
-                            .await
-                            .ok()?;
-                        self.handle_unrecoverable_error(
-                            stream_writer,
-                            anyhow!("expected xml frame"),
-                        )
-                        .await
-                        .ok()?;
-                        return None;
-                    };
+                    // TODO: DRY up stream header exchange
+                    self.exchange_stream_headers(
+                        stream_id.clone(),
+                        &mut stream_parser,
+                        &mut stream_writer,
+                    )
+                    .await
+                    .ok()?;
 
-                    // TODO: check "stream" namespace here or in parser?
+                    if self.settings.tls.required_for_clients && starttls_allowed {
+                        let starttls = StarttlsNegotiator::new(&self.settings.tls);
+                        let features = Element {
+                            name: "features".to_string(),
+                            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
+                            attributes: HashMap::new(),
+                            children: vec![Node::Element(starttls.advertise_feature())], // TODO: advertise voluntary-to-negotiate features
+                        };
+                        dbg!(&features);
+                        stream_writer.write_xml_element(&features).await.ok()?;
 
-                    let Frame::StreamStart(inbound_header) = frame else {
-                        self.send_stream_header(stream_writer, None, stream_id)
-                            .await
-                            .ok()?;
-                        self.handle_unrecoverable_error(
-                            stream_writer,
-                            anyhow!("expected stream header"),
-                        )
-                        .await
-                        .ok()?;
-                        return None;
-                    };
+                        let secure_socket =
+                            starttls.starttls(stream_parser, stream_writer).await.ok()?;
+                        let authenticated = secure_socket.is_authenticated(); // TODO: check authenticated entity
 
-                    // TODO: check if `to` is a valid domain for this server
+                        let (reader, writer) = tokio::io::split(secure_socket);
+                        stream_parser = ConcreteStreamParser::new(reader);
+                        stream_writer = StreamWriter::new(writer);
 
-                    self.send_stream_header(stream_writer, inbound_header.from, stream_id)
-                        .await
-                        .ok()?;
-
-                    if self.settings.tls.required_for_clients {
-                        todo!();
-                        State::Secured(stream_id)
+                        State::Secured(stream_id, authenticated)
                     } else {
+                        // TODO: allow negotiating STARTTLS voluntarily
                         let mut sasl = SaslNegotiator::new();
                         let features = Element {
                             name: "features".to_string(),
@@ -102,50 +105,43 @@ impl<'s> InboundStreamNegotiator<'s> {
                         stream_writer.write_xml_element(&features).await.ok()?;
 
                         let authenticated_entity = sasl
-                            .authenticate(stream_parser, stream_writer, false, false)
+                            .authenticate(&mut stream_parser, &mut stream_writer, false, false)
                             .await
                             .ok()?;
                         dbg!(&authenticated_entity);
                         State::Authenticated(StreamId::new(), authenticated_entity)
                     }
                 }
-                State::Secured(stream_id) => {
-                    todo!()
+                State::Secured(stream_id, authenticated) => {
+                    self.exchange_stream_headers(stream_id, &mut stream_parser, &mut stream_writer)
+                        .await
+                        .ok()?;
+
+                    let mut sasl = SaslNegotiator::new();
+                    let features = Element {
+                        name: "features".to_string(),
+                        namespace: Some(namespaces::XMPP_STREAMS.to_string()),
+                        attributes: HashMap::new(),
+                        children: vec![Node::Element(sasl.advertise_feature(true, authenticated))], // TODO: advertise voluntary-to-negotiate features
+                    };
+                    dbg!(&features);
+                    stream_writer.write_xml_element(&features).await.ok()?;
+
+                    let authenticated_entity = sasl
+                        .authenticate(&mut stream_parser, &mut stream_writer, true, authenticated)
+                        .await
+                        .ok()?;
+                    dbg!(&authenticated_entity);
+                    State::Authenticated(StreamId::new(), authenticated_entity)
                 }
                 State::Authenticated(stream_id, entity) => {
-                    let Ok(frame) = stream_parser.next().await? else {
-                        self.send_stream_header(stream_writer, None, stream_id)
-                            .await
-                            .ok()?;
-                        self.handle_unrecoverable_error(
-                            stream_writer,
-                            anyhow!("expected xml frame"),
-                        )
-                        .await
-                        .ok()?;
-                        return None;
-                    };
-
-                    // TODO: check "stream" namespace here or in parser?
-
-                    let Frame::StreamStart(inbound_header) = frame else {
-                        self.send_stream_header(stream_writer, None, stream_id)
-                            .await
-                            .ok()?;
-                        self.handle_unrecoverable_error(
-                            stream_writer,
-                            anyhow!("expected stream header"),
-                        )
-                        .await
-                        .ok()?;
-                        return None;
-                    };
-
-                    // TODO: check if `to` is a valid domain for this server
-
-                    self.send_stream_header(stream_writer, inbound_header.from, stream_id.clone())
-                        .await
-                        .ok()?;
+                    self.exchange_stream_headers(
+                        stream_id.clone(),
+                        &mut stream_parser,
+                        &mut stream_writer,
+                    )
+                    .await
+                    .ok()?;
 
                     let bind = ResourceBindingNegotiator::new();
                     let features = Element {
@@ -157,7 +153,7 @@ impl<'s> InboundStreamNegotiator<'s> {
                     stream_writer.write_xml_element(&features).await.ok()?;
 
                     let bound_entity = bind
-                        .bind_resource(stream_parser, stream_writer, &entity)
+                        .bind_resource(&mut stream_parser, &mut stream_writer, &entity)
                         .await
                         .ok()?;
                     State::Bound(stream_id, bound_entity)
@@ -165,17 +161,55 @@ impl<'s> InboundStreamNegotiator<'s> {
                 State::Bound(stream_id, bound_entity) => {
                     dbg!(&bound_entity);
                     // TODO: return stream info
-                    return Some(bound_entity);
+                    return Some((bound_entity, stream_parser, stream_writer));
                 }
             }
         }
     }
 
+    async fn exchange_stream_headers<P, W>(
+        &mut self,
+        stream_id: StreamId,
+        stream_parser: &mut P,
+        stream_writer: &mut StreamWriter<W>,
+    ) -> Result<(), Error>
+    where
+        P: StreamParser,
+        W: AsyncWrite + Unpin,
+    {
+        let Ok(frame) = stream_parser
+            .next()
+            .await
+            .ok_or(anyhow!("stream closed by peer"))?
+        else {
+            self.send_stream_header(stream_id, None, stream_writer)
+                .await?;
+            self.handle_unrecoverable_error(stream_writer, anyhow!("expected xml frame"))
+                .await?;
+            bail!("expected xml frame");
+        };
+
+        // TODO: check "stream" namespace here or in parser?
+
+        let Frame::StreamStart(inbound_header) = frame else {
+            self.send_stream_header(stream_id, None, stream_writer)
+                .await?;
+            self.handle_unrecoverable_error(stream_writer, anyhow!("expected stream header"))
+                .await?;
+            bail!("expected stream header");
+        };
+
+        // TODO: check if `to` is a valid domain for this server
+
+        self.send_stream_header(stream_id, inbound_header.from, stream_writer)
+            .await
+    }
+
     async fn send_stream_header<W: AsyncWrite + Unpin>(
         &mut self,
-        stream_writer: &mut StreamWriter<W>,
-        to: Option<Jid>,
         stream_id: StreamId,
+        to: Option<Jid>,
+        stream_writer: &mut StreamWriter<W>,
     ) -> Result<(), Error> {
         let outbound_header = StreamHeader {
             from: Some(self.settings.domain.clone()),

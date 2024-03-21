@@ -16,16 +16,16 @@ use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
 use uuid::Uuid;
 
+use inbound::connection::debug::DebugConnection;
+use inbound::connection::tcp::TcpConnection;
 use inbound::InboundStreamNegotiator;
 use services::router::{ManagementCommand, RouterHandle};
 use settings::Settings;
-use utils::recorder::StreamRecorder;
 use xml::stream_parser::Frame;
 use xml::stream_parser::{rusty_xml::StreamParser as ConcreteStreamParser, StreamParser};
 use xml::stream_writer::StreamWriter;
+use xmpp::jid::Jid;
 use xmpp::stanza::Stanza;
-
-use crate::xmpp::jid::Jid;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -47,18 +47,13 @@ async fn main() -> Result<(), Error> {
         tokio::spawn(async move {
             let mut inbound_negotiator = InboundStreamNegotiator::new(&settings);
 
-            let (reader, writer) = tokio::io::split(socket);
-            let log_id = Uuid::new_v4();
-            println!("New connection: {}", log_id);
-            let reader = StreamRecorder::try_new(reader, log_id).await.unwrap();
-            let writer = StreamRecorder::try_new(writer, log_id).await.unwrap();
+            let socket = TcpConnection::new(socket, true);
 
-            let mut stream_parser = ConcreteStreamParser::new(reader);
-            let mut stream_writer = StreamWriter::new(writer);
+            let socket = DebugConnection::try_new(socket).await.unwrap();
+            println!("New connection: {}", socket.uuid());
 
-            if let Some(entity) = inbound_negotiator
-                .run(&mut stream_parser, &mut stream_writer)
-                .await
+            if let Some((entity, mut stream_parser, mut stream_writer)) =
+                inbound_negotiator.run(socket).await
             {
                 let (entity_tx, mut entity_rx) = mpsc::channel(8);
                 router_handle

@@ -24,19 +24,24 @@ enum Socket {
     Tls(TlsStream<TcpStream>),
 }
 
-struct TcpConnection {
+pub struct TcpConnection {
     socket: Socket,
+    starttls_allowed: bool,
 }
 
 impl TcpConnection {
-    pub fn new(socket: TcpStream) -> Self {
+    pub fn new(socket: TcpStream, starttls_allowed: bool) -> Self {
         let socket = Socket::Plain(socket);
 
-        TcpConnection { socket }
+        TcpConnection {
+            socket,
+            starttls_allowed,
+        }
     }
 }
 
 impl Connection for TcpConnection {
+    type Me = Self;
     type Upgrade = TcpConnectionUpgrade;
 
     fn upgrade(
@@ -63,6 +68,10 @@ impl Connection for TcpConnection {
             }
             Socket::Tls(_) => Err(anyhow!("Connection is already secure")),
         }
+    }
+
+    fn is_starttls_allowed(&self) -> bool {
+        self.starttls_allowed
     }
 
     fn is_secure(&self) -> bool {
@@ -123,7 +132,7 @@ impl AsyncWrite for TcpConnection {
     }
 }
 
-struct TcpConnectionUpgrade {
+pub struct TcpConnectionUpgrade {
     accept: Accept<TcpStream>,
 }
 
@@ -137,6 +146,7 @@ impl Future for TcpConnectionUpgrade {
         let tls_stream = ready!(Pin::new(&mut self.accept).poll(cx))?;
         let connection = TcpConnection {
             socket: Socket::Tls(tls_stream),
+            starttls_allowed: false,
         };
         std::task::Poll::Ready(Ok(connection))
     }

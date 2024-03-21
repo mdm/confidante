@@ -86,14 +86,11 @@ impl MechanismNegotiator for ScramSha1Negotiator {
                         ));
                     };
 
-                    let jid = Jid::new(
-                        Some(entity),
-                        "localhost".to_string(),
-                        None,
-                    );
+                    let jid = Jid::new(Some(entity), "localhost".to_string(), None);
 
                     return MechanismNegotiatorResult::Success(
-                        jid, additional_data.map(|_| out.into_inner()),
+                        jid,
+                        additional_data.map(|_| out.into_inner()),
                     );
                 }
             }
@@ -139,7 +136,7 @@ impl SessionCallback for SaslCallback {
         let authid = context.get_ref::<AuthId>();
 
         validate.with::<SaslValidation, _>(|| match authid {
-            Some(user @ "user") => Ok(Ok(String::from(user))),
+            Some(user) => Ok(Ok(String::from(user))),
             _ => Ok(Err(anyhow!("Unknown user"))),
         })?;
 

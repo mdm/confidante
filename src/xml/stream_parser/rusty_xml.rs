@@ -60,7 +60,7 @@ pub struct StreamParser<R: AsyncRead + Unpin> {
 
 impl<R: AsyncRead + Unpin> super::StreamParser for StreamParser<R> {
     type Reader = R;
-    
+
     fn new(reader: R) -> Self {
         let buffer = vec![0; 4096].into_boxed_slice();
         let parser = Parser::new();
@@ -86,7 +86,6 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
     ) -> Poll<Option<Result<Frame, Error>>> {
-        println!("polling parser");
         let mut this = self.project();
         while let Some(parser_result) = this.parser.next() {
             match parser_result {

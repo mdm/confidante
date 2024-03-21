@@ -25,6 +25,10 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
         Self { writer, namespaces }
     }
 
+    pub fn into_inner(self) -> W {
+        self.writer
+    }
+
     pub async fn write_stream_header(
         &mut self,
         header: &StreamHeader,
@@ -94,10 +98,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
             .await
             .map_err(|err| anyhow!(err))?;
 
-        self.writer
-            .flush()
-            .await
-            .map_err(|err| anyhow!(err))
+        self.writer.flush().await.map_err(|err| anyhow!(err))
     }
 
     async fn write_str(&mut self, string: &str) -> Result<(), Error> {
