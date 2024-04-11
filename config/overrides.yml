@@ -1,4 +1,5 @@
 tls:
   required_for_clients: true
-  cert_file_path: localhost.pem
-  key_file_path: localhost-key.pem
+  server_config:
+    certificate_chain: localhost.pem
+    private_key: localhost-key.pem

@@ -76,20 +76,10 @@ impl<'s> StarttlsNegotiator<'s> {
 
         stream_writer.write_xml_element(&starttls_proceed).await?;
 
-        // TODO: preload on server start to avoid blocking the executor. fail if the files are not found.
-        let cert_file = &mut BufReader::new(File::open(&self.settings.cert_file_path)?);
-        let key_file = &mut BufReader::new(File::open(&self.settings.key_file_path)?);
-
-        let cert_chain = certs(cert_file).map(|result| result.unwrap()).collect();
-        let key_der = pkcs8_private_keys(key_file)
-            .map(|result| result.unwrap())
-            .collect::<Vec<_>>()
-            .remove(0); // TODO: avoid panics
-
         let reader = stream_parser.into_inner();
         let writer = stream_writer.into_inner();
         let socket = reader.unsplit(writer);
 
-        socket.upgrade(cert_chain, Pkcs8(key_der))?.await
+        socket.upgrade(self.settings.server_config.clone())?.await
     }
 }

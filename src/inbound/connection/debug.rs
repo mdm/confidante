@@ -1,12 +1,16 @@
 use std::{
     pin::Pin,
+    sync::Arc,
     task::{ready, Poll},
 };
 
 use anyhow::Error;
 use futures::Future;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::rustls::{
+    pki_types::{CertificateDer, PrivateKeyDer},
+    ServerConfig,
+};
 use uuid::Uuid;
 
 use crate::utils::recorder::StreamRecorder;
@@ -44,12 +48,8 @@ where
 {
     type Upgrade = DebugConnectionUpgrade<C>;
 
-    fn upgrade(
-        self,
-        cert_chain: Vec<CertificateDer<'static>>,
-        key_der: PrivateKeyDer<'static>,
-    ) -> Result<Self::Upgrade, Error> {
-        let upgrade = self.recorder.into_inner().upgrade(cert_chain, key_der)?;
+    fn upgrade(self, config: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
+        let upgrade = self.recorder.into_inner().upgrade(config)?;
         Ok(DebugConnectionUpgrade::new(Box::pin(upgrade), self.uuid))
     }
 

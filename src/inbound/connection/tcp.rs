@@ -2,20 +2,11 @@ use std::{pin::Pin, sync::Arc, task::ready};
 
 use anyhow::{anyhow, Error};
 use futures::Future;
-use rustls_native_certs::load_native_certs;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use tokio_rustls::{
-    rustls::{
-        pki_types::{CertificateDer, PrivateKeyDer},
-        server::WebPkiClientVerifier,
-        RootCertStore, ServerConfig,
-    },
-    server::TlsStream,
-    Accept, TlsAcceptor,
-};
+use tokio_rustls::{rustls::ServerConfig, server::TlsStream, Accept, TlsAcceptor};
 
 use super::Connection;
 
@@ -43,25 +34,11 @@ impl TcpConnection {
 impl Connection for TcpConnection {
     type Upgrade = TcpConnectionUpgrade;
 
-    fn upgrade(
-        self,
-        cert_chain: Vec<CertificateDer<'static>>,
-        key_der: PrivateKeyDer<'static>,
-    ) -> Result<Self::Upgrade, Error> {
+    fn upgrade(self, config: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
         match self.socket {
             Socket::Plain(socket) => {
-                let mut root_cert_store = RootCertStore::empty();
-                for cert in load_native_certs()? {
-                    root_cert_store.add(cert)?;
-                }
-                let client_cert_verifier = WebPkiClientVerifier::builder(Arc::new(root_cert_store))
-                    .allow_unauthenticated()
-                    .build()?;
-                let config = ServerConfig::builder()
-                    .with_client_cert_verifier(client_cert_verifier)
-                    .with_single_cert(cert_chain, key_der)?;
-                // TODO: can we pass in the config to avoid redoing the work above? See rustls examples
-                let accept = TlsAcceptor::from(Arc::new(config)).accept(socket);
+                // TODO: can we move the acceptor construction to the settings module?
+                let accept = TlsAcceptor::from(config).accept(socket);
 
                 Ok(TcpConnectionUpgrade { accept })
             }
