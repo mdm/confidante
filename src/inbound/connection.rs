@@ -6,9 +6,8 @@ use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 pub mod debug;
 pub mod tcp;
 
-pub trait Connection: AsyncRead + AsyncWrite + Unpin {
-    type Me: Sized;
-    type Upgrade: Future<Output = Result<Self::Me, Error>> + Send + 'static;
+pub trait Connection: AsyncRead + AsyncWrite + Unpin + Sized {
+    type Upgrade: Future<Output = Result<Self, Error>> + Send + 'static;
 
     fn upgrade(
         self,

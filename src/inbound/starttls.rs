@@ -48,7 +48,7 @@ impl<'s> StarttlsNegotiator<'s> {
         mut stream_writer: StreamWriter<WriteHalf<C>>,
     ) -> Result<C, Error>
     where
-        C: Connection<Me = C>,
+        C: Connection,
         P: StreamParser<Reader = ReadHalf<C>>,
     {
         // TODO: initiate starttls on xmpp protocol level

@@ -41,7 +41,6 @@ impl TcpConnection {
 }
 
 impl Connection for TcpConnection {
-    type Me = Self;
     type Upgrade = TcpConnectionUpgrade;
 
     fn upgrade(

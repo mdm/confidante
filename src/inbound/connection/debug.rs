@@ -42,7 +42,6 @@ where
     C: Connection + Send + 'static,
     C::Upgrade: Future<Output = Result<C, Error>> + Send + 'static,
 {
-    type Me = Self;
     type Upgrade = DebugConnectionUpgrade<C>;
 
     fn upgrade(

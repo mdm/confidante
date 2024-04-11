@@ -47,7 +47,7 @@ impl<'s> InboundStreamNegotiator<'s> {
         Self { settings }
     }
 
-    pub async fn run<C: Connection<Me = C>>(
+    pub async fn run<C: Connection>(
         &mut self,
         socket: C,
     ) -> Option<(Jid, impl StreamParser, StreamWriter<WriteHalf<C>>)> {
