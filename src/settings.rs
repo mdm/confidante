@@ -39,6 +39,7 @@ impl Settings {
         let settings = config::Config::builder()
             .add_source(config::File::with_name("config/defaults"))
             .add_source(config::File::with_name("config/overrides"))
+            .add_source(config::Environment::with_prefix("CONFIDANTE").separator("__"))
             .build()?;
 
         settings.try_deserialize()
@@ -49,7 +50,7 @@ fn load_certificate_chain<'d, D: Deserializer<'d>>(
     deserializer: D,
 ) -> Result<Vec<CertificateDer<'static>>, D::Error> {
     let cert_path = String::deserialize(deserializer)?;
-    let cert_file = &mut BufReader::new(File::open(&cert_path).map_err(serde::de::Error::custom)?);
+    let cert_file = &mut BufReader::new(File::open(cert_path).map_err(serde::de::Error::custom)?);
     let cert_chain = certs(cert_file).map(|result| result.unwrap()).collect();
 
     Ok(cert_chain)
@@ -59,7 +60,7 @@ fn load_private_key<'d, D: Deserializer<'d>>(
     deserializer: D,
 ) -> Result<PrivateKeyDer<'static>, D::Error> {
     let key_path = String::deserialize(deserializer)?;
-    let key_file = &mut BufReader::new(File::open(&key_path).map_err(serde::de::Error::custom)?);
+    let key_file = &mut BufReader::new(File::open(key_path).map_err(serde::de::Error::custom)?);
     let key_der = pkcs8_private_keys(key_file)
         .map(|result| result.unwrap())
         .collect::<Vec<_>>()
