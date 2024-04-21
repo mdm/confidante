@@ -204,7 +204,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
 
         for ((attribute, namespace), value) in &element.attributes {
             match namespace {
-                Some(namespace) => match self.lookup_namespace_prefix(&namespace) {
+                Some(namespace) => match self.lookup_namespace_prefix(namespace) {
                     Some("") => {
                         debug_assert!(false, "cannot use default namespace for attribute");
                         // TODO: declare namespace with generated prefix and write anyways

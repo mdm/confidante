@@ -1,10 +1,8 @@
 use std::collections::HashMap;
 
 use anyhow::{anyhow, bail, Error};
-use futures::stream;
-use quick_xml::writer;
+use tokio::io::AsyncWrite;
 use tokio::io::WriteHalf;
-use tokio::{io::AsyncWrite, net::TcpStream};
 use tokio_stream::StreamExt;
 
 use crate::xml::namespaces;
@@ -12,7 +10,7 @@ use crate::xml::stream_parser::rusty_xml::StreamParser as ConcreteStreamParser;
 use crate::xmpp::jid::Jid;
 use crate::xmpp::stream_header::{StreamHeader, StreamId};
 use crate::{
-    settings::Settings,
+    settings::get_settings,
     xml::{
         stream_parser::{Frame, StreamParser},
         stream_writer::StreamWriter,
@@ -37,14 +35,14 @@ enum State {
     Bound(StreamId, Jid),
 }
 
-pub struct InboundStreamNegotiator<'s> {
-    settings: &'s Settings,
+pub struct InboundStreamNegotiator {
+    _private: (),
 }
 
 // TODO: rename to InboundStreamNegotiator and feed Result<Frame>s instead of encapsulating the socket
-impl<'s> InboundStreamNegotiator<'s> {
-    pub fn new(settings: &'s Settings) -> Self {
-        Self { settings }
+impl InboundStreamNegotiator {
+    pub fn new() -> Self {
+        Self { _private: () }
     }
 
     pub async fn run<C: Connection>(
@@ -57,7 +55,7 @@ impl<'s> InboundStreamNegotiator<'s> {
         let mut stream_parser = ConcreteStreamParser::new(reader);
         let mut stream_writer = StreamWriter::new(writer);
 
-        let mut state = State::Connected(StreamId::new());
+        let mut state = State::Connected(StreamId::new()); // TODO: start in Secured state if socket is already secure
 
         loop {
             // TODO: handle timeouts while waiting for next frame
@@ -72,8 +70,8 @@ impl<'s> InboundStreamNegotiator<'s> {
                     .await
                     .ok()?;
 
-                    if self.settings.tls.required_for_clients && starttls_allowed {
-                        let starttls = StarttlsNegotiator::new(&self.settings.tls);
+                    if get_settings().tls.required_for_clients && starttls_allowed {
+                        let starttls = StarttlsNegotiator::new();
                         let features = Element {
                             name: "features".to_string(),
                             namespace: Some(namespaces::XMPP_STREAMS.to_string()),
@@ -212,7 +210,7 @@ impl<'s> InboundStreamNegotiator<'s> {
         stream_writer: &mut StreamWriter<W>,
     ) -> Result<(), Error> {
         let outbound_header = StreamHeader {
-            from: Some(self.settings.domain.clone()),
+            from: Some(get_settings().domain.clone()),
             to,
             id: Some(stream_id),
             language: None,

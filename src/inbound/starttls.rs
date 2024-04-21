@@ -1,13 +1,9 @@
-use std::{fs::File, io::BufReader};
-
 use anyhow::{bail, Error};
-use rustls::pki_types::PrivateKeyDer::Pkcs8;
-use rustls_pemfile::{certs, pkcs8_private_keys};
 use tokio::io::{ReadHalf, WriteHalf};
 use tokio_stream::StreamExt;
 
 use crate::{
-    settings::Tls,
+    settings::get_settings,
     xml::{
         namespaces,
         stream_parser::{Frame, StreamParser},
@@ -18,13 +14,13 @@ use crate::{
 
 use super::connection::Connection;
 
-pub struct StarttlsNegotiator<'s> {
-    settings: &'s Tls,
+pub struct StarttlsNegotiator {
+    _private: (),
 }
 
-impl<'s> StarttlsNegotiator<'s> {
-    pub fn new(settings: &'s Tls) -> Self {
-        Self { settings }
+impl StarttlsNegotiator {
+    pub fn new() -> Self {
+        Self { _private: () }
     }
 
     pub fn advertise_feature(&self) -> Element {
@@ -59,7 +55,7 @@ impl<'s> StarttlsNegotiator<'s> {
         if starttls.name != "starttls"
             || starttls.namespace != Some(namespaces::XMPP_STARTTLS.to_string())
         {
-            bail!("expected auth tag");
+            bail!("expected starttls tag with correct namespace");
         }
 
         let starttls_proceed = Element {
@@ -80,6 +76,8 @@ impl<'s> StarttlsNegotiator<'s> {
         let writer = stream_writer.into_inner();
         let socket = reader.unsplit(writer);
 
-        socket.upgrade(self.settings.server_config.clone())?.await
+        socket
+            .upgrade(get_settings().tls.server_config.clone())?
+            .await
     }
 }

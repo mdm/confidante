@@ -6,15 +6,9 @@ mod utils;
 mod xml;
 mod xmpp;
 
-use std::path::Path;
-use std::str::FromStr;
-
-use quick_xml::reader;
-use rustyxml::Element;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt;
-use uuid::Uuid;
 
 use inbound::connection::debug::DebugConnection;
 use inbound::connection::tcp::TcpConnection;
@@ -22,9 +16,6 @@ use inbound::InboundStreamNegotiator;
 use services::router::{ManagementCommand, RouterHandle};
 use settings::Settings;
 use xml::stream_parser::Frame;
-use xml::stream_parser::{rusty_xml::StreamParser as ConcreteStreamParser, StreamParser};
-use xml::stream_writer::StreamWriter;
-use xmpp::jid::Jid;
 use xmpp::stanza::Stanza;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;

@@ -14,8 +14,7 @@ use crate::{
     xmpp::jid::Jid,
 };
 
-use super::sasl::AuthenticatedEntity;
-
+#[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug)]
 pub struct BoundResource(pub String, ());
 

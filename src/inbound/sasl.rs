@@ -1,8 +1,7 @@
 use std::{collections::HashMap, fmt::Display};
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{bail, Error};
 use base64::prelude::*;
-use quick_xml::events::attributes;
 use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
@@ -18,6 +17,7 @@ use crate::{
 
 mod scram;
 
+#[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug)]
 pub struct AuthenticatedEntity(pub String, ());
 

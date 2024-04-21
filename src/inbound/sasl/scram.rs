@@ -31,7 +31,7 @@ impl MechanismNegotiator for ScramSha1Negotiator {
         scram::tools::hash_password::<Sha1>(plain_password, 4096, &salt[..], &mut hashed_password);
         let (client_key, server_key) =
             scram::tools::derive_keys::<Sha1>(hashed_password.as_slice());
-        let stored_key = Sha1::digest(&client_key);
+        let stored_key = Sha1::digest(client_key);
 
         let sasl_config = SASLConfig::builder()
             .with_defaults()
@@ -53,7 +53,6 @@ impl MechanismNegotiator for ScramSha1Negotiator {
         loop {
             let mut out = Cursor::new(Vec::new());
             let step_result = if payload.is_empty() || do_last_step {
-                do_last_step = false;
                 match self.sasl_session.step(None, &mut out) {
                     Ok(step_result) => step_result,
                     Err(e) => return MechanismNegotiatorResult::Failure(e.into()),

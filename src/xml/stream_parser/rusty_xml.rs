@@ -2,7 +2,6 @@ use std::pin::Pin;
 use std::task::{ready, Context, Poll};
 
 use anyhow::{anyhow, Error};
-use bytes::{Bytes, BytesMut};
 use pin_project::pin_project;
 use rustyxml::{Element as RustyXmlElement, ElementBuilder, Event, Parser};
 use tokio::io::{AsyncRead, ReadBuf};
@@ -82,12 +81,9 @@ impl<R: AsyncRead + Unpin> super::StreamParser for StreamParser<R> {
 impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
     type Item = Result<Frame, Error>;
 
-    fn poll_next(
-        mut self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Frame, Error>>> {
-        let mut this = self.project();
-        while let Some(parser_result) = this.parser.next() {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame, Error>>> {
+        let this = self.project();
+        for parser_result in this.parser.by_ref() {
             match parser_result {
                 Ok(Event::ElementStart(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
                     dbg!(&tag.ns, &tag.attributes);

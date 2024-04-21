@@ -1,4 +1,7 @@
-use std::{fmt::{Display, Formatter}, str::FromStr};
+use std::{
+    fmt::{Display, Formatter},
+    str::FromStr,
+};
 
 use anyhow::{bail, Error};
 use regex::Regex;
@@ -106,6 +109,6 @@ mod tests {
     #[test]
     fn fail_on_empty_string() {
         let result = "".parse::<Jid>();
-        assert!(matches!(result, Err(_)));
+        assert!(result.is_err());
     }
 }

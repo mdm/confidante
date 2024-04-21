@@ -7,10 +7,7 @@ use std::{
 use anyhow::Error;
 use futures::Future;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::{
-    pki_types::{CertificateDer, PrivateKeyDer},
-    ServerConfig,
-};
+use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
 use crate::utils::recorder::StreamRecorder;
