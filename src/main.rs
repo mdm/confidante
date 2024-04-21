@@ -31,21 +31,20 @@ type Error = Box<dyn std::error::Error + Send + Sync>;
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let settings = Settings::new()?;
+    Settings::init()?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:5222").await?;
 
     let router_handle = RouterHandle::new();
 
     loop {
         let (socket, _) = listener.accept().await?;
-        let settings = settings.clone();
 
         // TODO: handle shutdown
 
         let router_handle = router_handle.clone();
 
         tokio::spawn(async move {
-            let mut inbound_negotiator = InboundStreamNegotiator::new(&settings);
+            let mut inbound_negotiator = InboundStreamNegotiator::new();
 
             let socket = TcpConnection::new(socket, true);
 

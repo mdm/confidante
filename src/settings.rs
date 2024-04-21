@@ -1,6 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::{fs::File, io::BufReader};
 
+use anyhow::{anyhow, Error};
 use rustls_native_certs::load_native_certs;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use serde::{Deserialize, Deserializer};
@@ -11,16 +12,18 @@ use tokio_rustls::rustls::{RootCertStore, ServerConfig};
 
 use crate::xmpp::jid::Jid;
 
+static SETTINGS: OnceLock<Settings> = OnceLock::new();
+
 #[derive(Debug, Deserialize)]
 
-pub struct TlsConfig {
+struct TlsConfig {
     #[serde(deserialize_with = "load_certificate_chain")]
-    pub certificate_chain: Vec<CertificateDer<'static>>,
+    certificate_chain: Vec<CertificateDer<'static>>,
     #[serde(deserialize_with = "load_private_key")]
-    pub private_key: PrivateKeyDer<'static>,
+    private_key: PrivateKeyDer<'static>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Tls {
     pub required_for_clients: bool,
     pub required_for_servers: bool,
@@ -28,22 +31,30 @@ pub struct Tls {
     pub server_config: Arc<ServerConfig>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct Settings {
     pub domain: Jid, // TODO: can we deserialize this into a Jid?
     pub tls: Tls,
 }
 
 impl Settings {
-    pub fn new() -> Result<Self, config::ConfigError> {
+    pub fn init() -> Result<(), Error> {
         let settings = config::Config::builder()
             .add_source(config::File::with_name("config/defaults"))
             .add_source(config::File::with_name("config/overrides"))
             .add_source(config::Environment::with_prefix("CONFIDANTE").separator("__"))
             .build()?;
 
-        settings.try_deserialize()
+        let settings = settings.try_deserialize()?;
+        match SETTINGS.set(settings) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(anyhow!("Settings already initialized")),
+        }
     }
+}
+
+pub fn get_settings() -> &'static Settings {
+    SETTINGS.get().expect("Settings not initialized")
 }
 
 fn load_certificate_chain<'d, D: Deserializer<'d>>(
