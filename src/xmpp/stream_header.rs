@@ -1,25 +1,5 @@
-use base64::prelude::*;
-use rand::{RngCore, SeedableRng};
-
 use super::jid::Jid;
-
-#[derive(Debug, Clone)]
-pub struct StreamId(String);
-
-impl StreamId {
-    pub fn new() -> Self {
-        let id = Self::generate_id();
-        Self(id)
-    }
-
-    fn generate_id() -> String {
-        let mut rng = rand_chacha::ChaCha20Rng::from_entropy(); // TODO: use UUID instead?
-        let mut id_raw = [0u8; 16];
-        rng.fill_bytes(&mut id_raw);
-
-        BASE64_STANDARD.encode(id_raw)
-    }
-}
+use super::StreamId;
 
 #[derive(Debug)]
 pub struct LanguageTag(pub String); // TODO: make inner field private

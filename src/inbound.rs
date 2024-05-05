@@ -8,7 +8,8 @@ use tokio_stream::StreamExt;
 use crate::xml::namespaces;
 use crate::xml::stream_parser::rusty_xml::StreamParser as ConcreteStreamParser;
 use crate::xmpp::jid::Jid;
-use crate::xmpp::stream_header::{StreamHeader, StreamId};
+use crate::xmpp::stream_header::StreamHeader;
+use crate::xmpp::StreamId;
 use crate::{
     settings::get_settings,
     xml::{
