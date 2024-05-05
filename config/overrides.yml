@@ -1,2 +1,5 @@
 tls:
-  required_for_clients: false
+  required_for_clients: true
+  server_config:
+    certificate_chain: localhost.pem
+    private_key: localhost-key.pem

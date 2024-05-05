@@ -7,3 +7,4 @@ pub const XMPP_SERVER: &str = "jabber:server";
 pub const XMPP_SASL: &str = "urn:ietf:params:xml:ns:xmpp-sasl";
 pub const XMPP_STREAM_ERRORS: &str = "urn:ietf:params:xml:ns:xmpp-streams";
 pub const XMPP_BIND: &str = "urn:ietf:params:xml:ns:xmpp-bind";
+pub const XMPP_STARTTLS: &str = "urn:ietf:params:xml:ns:xmpp-tls";

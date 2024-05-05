@@ -1,18 +1,25 @@
 use std::{collections::HashMap, fmt::Display};
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{bail, Error};
 use base64::prelude::*;
-use quick_xml::events::attributes;
 use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
-use crate::{xml::{namespaces, stream_parser::{Frame, StreamParser}, stream_writer::StreamWriter, Element, Node}, xmpp::jid::Jid};
+use crate::{
+    xml::{
+        namespaces,
+        stream_parser::{Frame, StreamParser},
+        stream_writer::StreamWriter,
+        Element, Node,
+    },
+    xmpp::jid::Jid,
+};
 
 mod scram;
 
+#[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug)]
 pub struct AuthenticatedEntity(pub String, ());
-
 
 pub struct SaslNegotiator {
     _private: (),
@@ -44,7 +51,10 @@ impl SaslNegotiator {
         }
 
         let mut attributes = HashMap::new();
-        attributes.insert(("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string());
+        attributes.insert(
+            ("xmlns".to_string(), None),
+            namespaces::XMPP_SASL.to_string(),
+        );
 
         Element {
             name: "mechanisms".to_string(),
@@ -64,7 +74,9 @@ impl SaslNegotiator {
         let Some(Ok(Frame::XmlFragment(auth))) = stream_parser.next().await else {
             bail!("expected xml fragment");
         };
-        if auth.name != "auth" { // TODO: check namespace
+
+        if auth.name != "auth" {
+            // TODO: check namespace
             bail!("expected auth tag");
         }
 
@@ -79,7 +91,7 @@ impl SaslNegotiator {
         let mut response_payload = BASE64_STANDARD.decode(auth.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
 
         loop {
-            let result = negotiator.process(response_payload);    
+            let result = negotiator.process(response_payload);
 
             match result {
                 MechanismNegotiatorResult::Challenge(challenge) => {
@@ -87,24 +99,32 @@ impl SaslNegotiator {
                     let xml = Element {
                         name: "challenge".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
-                        attributes: vec![
-                            (("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string()),
-                        ].into_iter().collect(),
+                        attributes: vec![(
+                            ("xmlns".to_string(), None),
+                            namespaces::XMPP_SASL.to_string(),
+                        )]
+                        .into_iter()
+                        .collect(),
                         children: vec![Node::Text(challenge)],
                     };
                     stream_writer.write_xml_element(&xml).await?;
                 }
                 MechanismNegotiatorResult::Success(jid, additional_data) => {
                     let children = match additional_data {
-                        Some(additional_data) => vec![Node::Text(BASE64_STANDARD.encode(additional_data))],
+                        Some(additional_data) => {
+                            vec![Node::Text(BASE64_STANDARD.encode(additional_data))]
+                        }
                         None => vec![],
                     };
                     let xml = Element {
                         name: "success".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
-                        attributes: vec![
-                            (("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string()),
-                        ].into_iter().collect(),
+                        attributes: vec![(
+                            ("xmlns".to_string(), None),
+                            namespaces::XMPP_SASL.to_string(),
+                        )]
+                        .into_iter()
+                        .collect(),
                         children,
                     };
                     stream_writer.write_xml_element(&xml).await?;
@@ -120,13 +140,16 @@ impl SaslNegotiator {
                     let xml = Element {
                         name: "failure".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
-                        attributes: vec![
-                            (("xmlns".to_string(), None), namespaces::XMPP_SASL.to_string()),
-                        ].into_iter().collect(),
+                        attributes: vec![(
+                            ("xmlns".to_string(), None),
+                            namespaces::XMPP_SASL.to_string(),
+                        )]
+                        .into_iter()
+                        .collect(),
                         children: vec![Node::Element(reason)],
                     };
                     stream_writer.write_xml_element(&xml).await?;
-                }                    
+                }
             }
 
             let Some(Ok(Frame::XmlFragment(response))) = stream_parser.next().await else {
@@ -135,7 +158,8 @@ impl SaslNegotiator {
 
             match response.name.as_str() {
                 "response" => {
-                    response_payload = BASE64_STANDARD.decode(response.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
+                    response_payload = BASE64_STANDARD.decode(response.get_text()).unwrap();
+                    // TODO: handle "incorrect-encoding"
                 }
                 "abort" => {
                     // TODO: send "failure" element
@@ -146,10 +170,7 @@ impl SaslNegotiator {
                     bail!("unexpected element");
                 }
             }
-
-
         }
-        
     }
 
     fn mechanism_available(
@@ -168,7 +189,8 @@ impl SaslNegotiator {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum SaslError { // TODO: do we need this?
+pub enum SaslError {
+    // TODO: do we need this?
     #[error("the SASL mechanism `{0}` is not supported")]
     UnsupportedMechanism(String),
 }
@@ -232,6 +254,8 @@ enum MechanismNegotiatorResult {
 }
 
 trait MechanismNegotiator {
-    fn with_credentials() -> Result<Self, Error> where Self: Sized;
+    fn with_credentials() -> Result<Self, Error>
+    where
+        Self: Sized;
     fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult;
 }

@@ -3,10 +3,10 @@ use std::{
     task::{ready, Poll},
 };
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::BufMut;
 use tokio::{
     fs::{File, OpenOptions},
-    io::{AsyncRead, AsyncWrite, BufWriter, ReadBuf},
+    io::{AsyncRead, AsyncWrite, ReadBuf},
 };
 use uuid::Uuid;
 
@@ -32,7 +32,7 @@ pub struct StreamRecorder<S> {
 }
 
 impl<S> StreamRecorder<S> {
-    pub async fn try_new(wrapped_stream: S, uuid: &Uuid) -> std::io::Result<Self> {
+    pub async fn try_new(wrapped_stream: S, uuid: Uuid) -> std::io::Result<Self> {
         let input_recording = OpenOptions::new()
             .create(true)
             .append(true)
@@ -62,6 +62,14 @@ impl<S> StreamRecorder<S> {
             input_recording_done: false,
             output_recording_done: false,
         })
+    }
+
+    pub fn get_ref(&self) -> &S {
+        &self.inner_stream
+    }
+
+    pub fn into_inner(self) -> S {
+        self.inner_stream
     }
 }
 
@@ -245,7 +253,7 @@ mod tests {
         let uuid = Uuid::new_v4();
 
         let (rx, mut tx) = duplex(1000);
-        let mut recorder = StreamRecorder::try_new(rx, &uuid).await.unwrap();
+        let mut recorder = StreamRecorder::try_new(rx, uuid).await.unwrap();
 
         let write = tokio::spawn(async move {
             tx.write_all(&data).await.unwrap();
@@ -293,7 +301,7 @@ mod tests {
         let uuid = Uuid::new_v4();
 
         let (mut rx, tx) = duplex(duplex_buf_size);
-        let mut recorder = StreamRecorder::try_new(tx, &uuid).await.unwrap();
+        let mut recorder = StreamRecorder::try_new(tx, uuid).await.unwrap();
 
         let write = tokio::spawn(async move {
             recorder.write_all(&data).await.unwrap();

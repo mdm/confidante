@@ -1,18 +1,20 @@
-use std::{collections::HashMap, f32::consts::E, vec};
+use std::{collections::HashMap, vec};
 
 use anyhow::{bail, Error};
 use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
-use crate::{xml::{
-    namespaces,
-    stream_parser::{Frame, StreamParser},
-    stream_writer::StreamWriter,
-    Element, Node,
-}, xmpp::jid::Jid};
+use crate::{
+    xml::{
+        namespaces,
+        stream_parser::{Frame, StreamParser},
+        stream_writer::StreamWriter,
+        Element, Node,
+    },
+    xmpp::jid::Jid,
+};
 
-use super::sasl::AuthenticatedEntity;
-
+#[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug)]
 pub struct BoundResource(pub String, ());
 
@@ -53,6 +55,7 @@ impl ResourceBindingNegotiator {
         dbg!(&iq_stanza);
 
         if iq_stanza.name != "iq" {
+            // TODO: check namespace
             bail!("expected IQ stanza");
         }
 
@@ -68,11 +71,10 @@ impl ResourceBindingNegotiator {
             bail!("IQ stanza does not contain a bind request");
         };
 
-        let resource =
-            match bind_request.get_child("resource", Some(namespaces::XMPP_BIND)) {
-                Some(requested_resource) => requested_resource.get_text(),
-                None => uuid::Uuid::new_v4().to_string(),
-            };
+        let resource = match bind_request.get_child("resource", Some(namespaces::XMPP_BIND)) {
+            Some(requested_resource) => requested_resource.get_text(),
+            None => uuid::Uuid::new_v4().to_string(),
+        };
 
         // TODO: check resource availability and maximum number of connected resources
 
@@ -90,9 +92,12 @@ impl ResourceBindingNegotiator {
             children: vec![Node::Element(Element {
                 name: "bind".to_string(),
                 namespace: Some(namespaces::XMPP_BIND.to_string()),
-                attributes: vec![
-                    (("xmlns".to_string(), None), namespaces::XMPP_BIND.to_string()),
-                ].into_iter().collect(),
+                attributes: vec![(
+                    ("xmlns".to_string(), None),
+                    namespaces::XMPP_BIND.to_string(),
+                )]
+                .into_iter()
+                .collect(),
                 children: vec![Node::Element(Element {
                     name: "jid".to_string(),
                     namespace: None,

@@ -16,9 +16,8 @@ impl StreamId {
         let mut rng = rand_chacha::ChaCha20Rng::from_entropy(); // TODO: use UUID instead?
         let mut id_raw = [0u8; 16];
         rng.fill_bytes(&mut id_raw);
-        let id_encoded = BASE64_STANDARD.encode(id_raw);
 
-        id_encoded
+        BASE64_STANDARD.encode(id_raw)
     }
 }
 
