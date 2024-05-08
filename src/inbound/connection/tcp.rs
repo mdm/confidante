@@ -8,7 +8,7 @@ use tokio::{
 };
 use tokio_rustls::{rustls::ServerConfig, server::TlsStream, Accept, TlsAcceptor};
 
-use super::Connection;
+use crate::xmpp::stream::Connection;
 
 enum Socket {
     Plain(TcpStream),

@@ -8,8 +8,9 @@ use tokio_stream::StreamExt;
 use crate::xml::namespaces;
 use crate::xml::stream_parser::rusty_xml::StreamParser as ConcreteStreamParser;
 use crate::xmpp::jid::Jid;
+use crate::xmpp::stream::Connection;
+use crate::xmpp::stream::StreamId;
 use crate::xmpp::stream_header::StreamHeader;
-use crate::xmpp::StreamId;
 use crate::{
     settings::get_settings,
     xml::{
@@ -19,7 +20,6 @@ use crate::{
     },
 };
 
-use self::connection::Connection;
 use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
 use starttls::StarttlsNegotiator;

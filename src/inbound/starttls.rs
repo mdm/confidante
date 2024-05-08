@@ -10,9 +10,8 @@ use crate::{
         stream_writer::StreamWriter,
         Element,
     },
+    xmpp::stream::Connection,
 };
-
-use super::connection::Connection;
 
 pub struct StarttlsNegotiator {
     _private: (),

@@ -1,5 +1,5 @@
 use super::jid::Jid;
-use super::StreamId;
+use super::stream::StreamId;
 
 #[derive(Debug)]
 pub struct LanguageTag(pub String); // TODO: make inner field private
