@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::sync::Arc;
 
 use anyhow::Error;
@@ -15,8 +14,6 @@ use crate::{
         stream_writer::StreamWriter,
     },
 };
-
-use super::{jid::Jid, stream_header::LanguageTag};
 
 #[derive(Debug, Clone)]
 pub struct StreamId(String);
@@ -36,17 +33,6 @@ impl StreamId {
     }
 }
 
-enum ConnectionType {
-    Client,
-    Server,
-}
-
-enum StreamFeatures {
-    Tls { with_authentication: bool },
-    Authentication,
-    ResourceBinding,
-}
-
 pub trait Connection: AsyncRead + AsyncWrite + Unpin + Sized {
     type Upgrade: Future<Output = Result<Self, Error>> + Send + 'static;
 
@@ -56,13 +42,15 @@ pub trait Connection: AsyncRead + AsyncWrite + Unpin + Sized {
     fn is_authenticated(&self) -> bool;
 }
 
-struct XmppStream<C>
+pub struct XmppStream<C>
 where
     C: Connection,
 {
     starttls_allowed: bool,
-    reader: ConcreteStreamParser<ReadHalf<C>>,
-    writer: StreamWriter<WriteHalf<C>>,
+    secure: bool,
+    authenticated: bool,
+    reader: Option<ConcreteStreamParser<ReadHalf<C>>>,
+    writer: Option<StreamWriter<WriteHalf<C>>>,
 }
 
 impl<C> XmppStream<C>
@@ -71,56 +59,65 @@ where
 {
     pub fn new(connection: C) -> Self {
         let starttls_allowed = connection.is_starttls_allowed();
+        let secure = connection.is_secure();
+        let authenticated = connection.is_authenticated();
         let (reader, writer) = split(connection);
-        let reader = ConcreteStreamParser::new(reader);
-        let writer = StreamWriter::new(writer);
+        let reader = Some(ConcreteStreamParser::new(reader));
+        let writer = Some(StreamWriter::new(writer));
 
         Self {
             starttls_allowed,
+            secure,
+            authenticated,
             reader,
             writer,
         }
     }
 
-    pub fn reset(mut self) -> XmppStream<C> {
-        let reader = self.reader.into_inner();
-        let writer = self.writer.into_inner();
-        self.reader = ConcreteStreamParser::new(reader);
-        self.writer = StreamWriter::new(writer);
-
-        self
+    pub fn reset(&mut self) {
+        let reader = self.reader.take().unwrap().into_inner();
+        let writer = self.writer.take().unwrap().into_inner();
+        self.reader = Some(ConcreteStreamParser::new(reader));
+        self.writer = Some(StreamWriter::new(writer));
     }
 
     pub fn is_starttls_allowed(&self) -> bool {
         self.starttls_allowed
     }
 
-    pub async fn upgrade_to_tls(mut self) -> Result<XmppStream<C>, Error> {
-        let reader = self.reader.into_inner();
-        let writer = self.writer.into_inner();
+    pub fn is_secure(&self) -> bool {
+        self.secure
+    }
+
+    pub fn is_authenticated(&self) -> bool {
+        self.authenticated
+    }
+
+    pub fn reader(&mut self) -> &mut ConcreteStreamParser<ReadHalf<C>> {
+        self.reader.as_mut().unwrap()
+    }
+
+    pub fn writer(&mut self) -> &mut StreamWriter<WriteHalf<C>> {
+        self.writer.as_mut().unwrap()
+    }
+
+    pub async fn upgrade_to_tls(&mut self) -> Result<(), Error> {
+        let reader = self.reader.take().unwrap().into_inner();
+        let writer = self.writer.take().unwrap().into_inner();
         let connection = reader.unsplit(writer);
 
         let connection = connection
             .upgrade(get_settings().tls.server_config.clone())?
             .await?;
 
+        self.starttls_allowed = connection.is_starttls_allowed();
+        self.secure = connection.is_secure();
+        self.authenticated = connection.is_authenticated();
+
         let (reader, writer) = split(connection);
-        self.reader = ConcreteStreamParser::new(reader);
-        self.writer = StreamWriter::new(writer);
+        self.reader = Some(ConcreteStreamParser::new(reader));
+        self.writer = Some(StreamWriter::new(writer));
 
-        Ok(self)
+        Ok(())
     }
-}
-
-struct StreamInfo<C>
-where
-    C: Connection,
-{
-    stream_id: StreamId,
-    jid: Jid,
-    peer_jid: Option<Jid>,
-    peer_language: LanguageTag,
-    connection_type: ConnectionType,
-    features: HashSet<StreamFeatures>,
-    stream: XmppStream<C>,
 }

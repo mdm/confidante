@@ -1,17 +1,13 @@
 use std::{collections::HashMap, vec};
 
 use anyhow::{bail, Error};
-use tokio::io::AsyncWrite;
-use tokio_stream::StreamExt;
 
 use crate::{
-    xml::{
-        namespaces,
-        stream_parser::{Frame, StreamParser},
-        stream_writer::StreamWriter,
-        Element, Node,
+    xml::{namespaces, Element, Node},
+    xmpp::{
+        jid::Jid,
+        stream::{Connection, XmppStream},
     },
-    xmpp::jid::Jid,
 };
 
 #[allow(clippy::manual_non_exhaustive)]
@@ -23,11 +19,7 @@ pub struct ResourceBindingNegotiator {
 }
 
 impl ResourceBindingNegotiator {
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
-
-    pub fn advertise_feature(&self) -> Element {
+    pub fn advertise_feature() -> Element {
         // TODO: decide if this should be part of a trait
         let mut attributes = HashMap::new();
         attributes.insert(
@@ -43,31 +35,28 @@ impl ResourceBindingNegotiator {
         }
     }
 
-    pub async fn bind_resource<P: StreamParser, W: AsyncWrite + Unpin>(
-        &self,
-        stream_parser: &mut P,
-        stream_writer: &mut StreamWriter<W>,
-        entity: &Jid,
-    ) -> Result<Jid, Error> {
-        let Some(Ok(Frame::XmlFragment(iq_stanza))) = stream_parser.next().await else {
-            bail!("expected xml fragment");
-        };
-        dbg!(&iq_stanza);
-
-        if iq_stanza.name != "iq" {
+    pub async fn negotiate_feature<C>(
+        stream: &mut XmppStream<C>,
+        element: &Element,
+        entity: &Option<Jid>,
+    ) -> Result<Jid, Error>
+    where
+        C: Connection,
+    {
+        if element.name != "iq" {
             // TODO: check namespace
             bail!("expected IQ stanza");
         }
 
-        if iq_stanza.get_attribute("type", None) != Some("set") {
+        if element.get_attribute("type", None) != Some("set") {
             bail!("IQ stanza is not of type set");
         };
 
-        let Some(request_id) = iq_stanza.get_attribute("id", None) else {
+        let Some(request_id) = element.get_attribute("id", None) else {
             bail!("IQ stanza does not have an id");
         };
 
-        let Some(bind_request) = iq_stanza.get_child("bind", Some(namespaces::XMPP_BIND)) else {
+        let Some(bind_request) = element.get_child("bind", Some(namespaces::XMPP_BIND)) else {
             bail!("IQ stanza does not contain a bind request");
         };
 
@@ -77,6 +66,10 @@ impl ResourceBindingNegotiator {
         };
 
         // TODO: check resource availability and maximum number of connected resources
+
+        let Some(entity) = entity else {
+            bail!("entity to bind is unknown");
+        };
 
         let bound_entity = entity.bind(resource);
 
@@ -107,7 +100,7 @@ impl ResourceBindingNegotiator {
             })],
         };
 
-        stream_writer.write_xml_element(&bind_response).await?;
+        stream.writer().write_xml_element(&bind_response).await?;
 
         Ok(bound_entity)
     }

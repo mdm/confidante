@@ -2,17 +2,14 @@ use std::{collections::HashMap, fmt::Display};
 
 use anyhow::{bail, Error};
 use base64::prelude::*;
-use tokio::io::AsyncWrite;
 use tokio_stream::StreamExt;
 
 use crate::{
-    xml::{
-        namespaces,
-        stream_parser::{Frame, StreamParser},
-        stream_writer::StreamWriter,
-        Element, Node,
+    xml::{namespaces, stream_parser::Frame, Element, Node},
+    xmpp::{
+        jid::Jid,
+        stream::{Connection, XmppStream},
     },
-    xmpp::jid::Jid,
 };
 
 mod scram;
@@ -26,23 +23,19 @@ pub struct SaslNegotiator {
 }
 
 impl SaslNegotiator {
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
-
-    pub fn advertise_feature(&self, secure: bool, authenticated: bool) -> Element {
+    pub fn advertise_feature(secure: bool, authenticated: bool) -> Element {
         let mut available_mechanisms = Vec::new();
 
-        if self.mechanism_available(&Mechanism::External, secure, authenticated) {
+        if Self::mechanism_available(&Mechanism::External, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::External.to_element()));
         }
-        if self.mechanism_available(&Mechanism::ScramSha1Plus, secure, authenticated) {
+        if Self::mechanism_available(&Mechanism::ScramSha1Plus, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::ScramSha1Plus.to_element()));
         }
-        if self.mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
+        if Self::mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::ScramSha1.to_element()));
         }
-        if self.mechanism_available(&Mechanism::Plain, secure, authenticated) {
+        if Self::mechanism_available(&Mechanism::Plain, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::Plain.to_element()));
         }
 
@@ -64,23 +57,18 @@ impl SaslNegotiator {
         }
     }
 
-    pub async fn authenticate<P: StreamParser, W: AsyncWrite + Unpin>(
-        &mut self,
-        stream_parser: &mut P,
-        stream_writer: &mut StreamWriter<W>,
-        secure: bool,
-        authenticated: bool,
-    ) -> Result<Jid, Error> {
-        let Some(Ok(Frame::XmlFragment(auth))) = stream_parser.next().await else {
-            bail!("expected xml fragment");
-        };
-
-        if auth.name != "auth" {
-            // TODO: check namespace
-            bail!("expected auth tag");
+    pub async fn negotiate_feature<C>(
+        stream: &mut XmppStream<C>,
+        element: &Element,
+    ) -> Result<Jid, Error>
+    where
+        C: Connection,
+    {
+        if element.name != "auth" || element.namespace != Some(namespaces::XMPP_SASL.to_string()) {
+            bail!("expected auth element");
         }
 
-        let mechanism = match auth.get_attribute("mechanism", None) {
+        let mechanism = match element.get_attribute("mechanism", None) {
             Some(mechanism) => Mechanism::try_from(mechanism).unwrap(), // TODO: handle "invalid-mechanism"
             None => bail!("auth element is missing mechanism attribute"),
         };
@@ -88,7 +76,7 @@ impl SaslNegotiator {
         // TODO: verify mechanism is available
 
         let mut negotiator = mechanism.negotiator()?; // TODO: handle error locally
-        let mut response_payload = BASE64_STANDARD.decode(auth.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
+        let mut response_payload = BASE64_STANDARD.decode(element.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
 
         loop {
             let result = negotiator.process(response_payload);
@@ -107,7 +95,7 @@ impl SaslNegotiator {
                         .collect(),
                         children: vec![Node::Text(challenge)],
                     };
-                    stream_writer.write_xml_element(&xml).await?;
+                    stream.writer().write_xml_element(&xml).await?;
                 }
                 MechanismNegotiatorResult::Success(jid, additional_data) => {
                     let children = match additional_data {
@@ -127,10 +115,10 @@ impl SaslNegotiator {
                         .collect(),
                         children,
                     };
-                    stream_writer.write_xml_element(&xml).await?;
+                    stream.writer().write_xml_element(&xml).await?;
                     return Ok(jid);
                 }
-                MechanismNegotiatorResult::Failure(err) => {
+                MechanismNegotiatorResult::Failure(_err) => {
                     let reason = Element {
                         name: "not-authorized".to_string(),
                         namespace: Some(namespaces::XMPP_SASL.to_string()),
@@ -148,11 +136,11 @@ impl SaslNegotiator {
                         .collect(),
                         children: vec![Node::Element(reason)],
                     };
-                    stream_writer.write_xml_element(&xml).await?;
+                    stream.writer().write_xml_element(&xml).await?;
                 }
             }
 
-            let Some(Ok(Frame::XmlFragment(response))) = stream_parser.next().await else {
+            let Some(Ok(Frame::XmlFragment(response))) = stream.reader().next().await else {
                 bail!("expected xml fragment");
             };
 
@@ -173,12 +161,7 @@ impl SaslNegotiator {
         }
     }
 
-    fn mechanism_available(
-        &self,
-        mechanism: &Mechanism,
-        secure: bool,
-        authenticated: bool,
-    ) -> bool {
+    fn mechanism_available(mechanism: &Mechanism, secure: bool, authenticated: bool) -> bool {
         match mechanism {
             Mechanism::External => secure && authenticated,
             Mechanism::Plain => secure,
