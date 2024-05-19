@@ -63,6 +63,7 @@ impl FromStr for Jid {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
+        // TODO: The regex below is not perfect. For example it incorrectly parses <a.example.com/b@example.net>.
         let regex = Regex::new("(?:(?P<local>.+)@)?(?P<domain>.+)(?:/(?P<resource>.+))?").unwrap();
         match regex.captures(s) {
             Some(captures) => {
