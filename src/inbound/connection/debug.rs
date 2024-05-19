@@ -11,8 +11,7 @@ use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
 use crate::utils::recorder::StreamRecorder;
-
-use super::Connection;
+use crate::xmpp::stream::Connection;
 
 pub struct DebugConnection<C>
 where

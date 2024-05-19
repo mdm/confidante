@@ -10,20 +10,15 @@ use crate::{
         stream_writer::StreamWriter,
         Element,
     },
+    xmpp::stream::{Connection, XmppStream},
 };
 
-use super::connection::Connection;
-
-pub struct StarttlsNegotiator {
+pub(super) struct StarttlsNegotiator {
     _private: (),
 }
 
 impl StarttlsNegotiator {
-    pub fn new() -> Self {
-        Self { _private: () }
-    }
-
-    pub fn advertise_feature(&self) -> Element {
+    pub fn advertise_feature() -> Element {
         let mut attributes = std::collections::HashMap::new();
         attributes.insert(
             ("xmlns".to_string(), None),
@@ -38,24 +33,17 @@ impl StarttlsNegotiator {
         }
     }
 
-    pub async fn starttls<C, P>(
-        &self,
-        mut stream_parser: P,
-        mut stream_writer: StreamWriter<WriteHalf<C>>,
-    ) -> Result<C, Error>
+    pub async fn negotiate_feature<C>(
+        stream: &mut XmppStream<C>,
+        element: &Element,
+    ) -> Result<(), Error>
     where
         C: Connection,
-        P: StreamParser<Reader = ReadHalf<C>>,
     {
-        // TODO: initiate starttls on xmpp protocol level
-        let Some(Ok(Frame::XmlFragment(starttls))) = stream_parser.next().await else {
-            bail!("expected xml fragment");
-        };
-
-        if starttls.name != "starttls"
-            || starttls.namespace != Some(namespaces::XMPP_STARTTLS.to_string())
+        if element.name != "starttls"
+            || element.namespace != Some(namespaces::XMPP_STARTTLS.to_string())
         {
-            bail!("expected starttls tag with correct namespace");
+            bail!("expected starttls element");
         }
 
         let starttls_proceed = Element {
@@ -70,14 +58,9 @@ impl StarttlsNegotiator {
             children: vec![],
         };
 
-        stream_writer.write_xml_element(&starttls_proceed).await?;
+        stream.writer().write_xml_element(&starttls_proceed).await?;
+        stream.upgrade_to_tls().await?;
 
-        let reader = stream_parser.into_inner();
-        let writer = stream_writer.into_inner();
-        let socket = reader.unsplit(writer);
-
-        socket
-            .upgrade(get_settings().tls.server_config.clone())?
-            .await
+        Ok(())
     }
 }

@@ -6,17 +6,12 @@ mod utils;
 mod xml;
 mod xmpp;
 
-use tokio::select;
-use tokio::sync::mpsc;
-use tokio_stream::StreamExt;
-
 use inbound::connection::debug::DebugConnection;
 use inbound::connection::tcp::TcpConnection;
-use inbound::InboundStreamNegotiator;
-use services::router::{ManagementCommand, RouterHandle};
+use services::router::RouterHandle;
 use settings::Settings;
-use xml::stream_parser::Frame;
-use xmpp::stanza::Stanza;
+
+use crate::inbound::InboundStream;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -28,45 +23,21 @@ async fn main() -> Result<(), Error> {
     let router_handle = RouterHandle::new();
 
     loop {
-        let (socket, _) = listener.accept().await?;
+        let (connection, _) = listener.accept().await?;
 
         // TODO: handle shutdown
 
         let router_handle = router_handle.clone();
 
         tokio::spawn(async move {
-            let mut inbound_negotiator = InboundStreamNegotiator::new();
+            let connection = TcpConnection::new(connection, true);
+            let connection = DebugConnection::try_new(connection).await.unwrap();
+            println!("New connection: {}", connection.uuid());
 
-            let socket = TcpConnection::new(socket, true);
-
-            let socket = DebugConnection::try_new(socket).await.unwrap();
-            println!("New connection: {}", socket.uuid());
-
-            if let Some((entity, mut stream_parser, mut stream_writer)) =
-                inbound_negotiator.run(socket).await
-            {
-                let (entity_tx, mut entity_rx) = mpsc::channel(8);
-                router_handle
-                    .management
-                    .send(ManagementCommand::Register(entity, entity_tx))
-                    .await
-                    .unwrap();
-
-                loop {
-                    select! {
-                        Some(Ok(Frame::XmlFragment(element))) = stream_parser.next() => {
-                            router_handle.stanzas.send(Stanza { element }).await.unwrap();
-                        }
-                        Some(Stanza { element }) = entity_rx.recv() => {
-                            stream_writer.write_xml_element(&element).await.unwrap();
-                        }
-                    }
-                }
-            }
+            let mut stream = InboundStream::new(connection, router_handle);
+            stream.handle().await;
 
             // TODO: close connection (or does drop do that?)
-            // let reader = stream_parser.into_inner();
-            // reader.into_inner().shutdown(std::net::Shutdown::Both).unwrap();
         });
     }
 }
