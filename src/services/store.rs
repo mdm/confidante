@@ -100,26 +100,28 @@ trait StoreBackend {
 }
 
 #[cfg(test)]
+#[derive(Default)]
+struct StubStoreBackend {
+    hashed_password: Option<String>,
+}
+
+#[cfg(test)]
+impl StoreBackend for StubStoreBackend {
+    async fn get_hashed_password(&self, _jid: Jid) -> Option<String> {
+        self.hashed_password.clone()
+    }
+}
+
+#[cfg(test)]
 mod test {
     use std::default::Default;
 
     use super::*;
 
-    #[derive(Default)]
-    struct MockBackend {
-        hashed_password: Option<String>,
-    }
-
-    impl StoreBackend for MockBackend {
-        async fn get_hashed_password(&self, _jid: Jid) -> Option<String> {
-            self.hashed_password.clone()
-        }
-    }
-
     #[tokio::test]
     async fn test_store_query() {
         let expected_password = Some("password".to_string());
-        let mut store = StoreHandle::new(MockBackend {
+        let mut store = StoreHandle::new(StubStoreBackend {
             hashed_password: expected_password.clone(),
             ..Default::default()
         });
