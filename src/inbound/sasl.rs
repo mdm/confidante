@@ -1,4 +1,8 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 
 use anyhow::{bail, Error};
 use base64::prelude::*;
@@ -12,6 +16,10 @@ use crate::{
     },
 };
 
+pub use self::plain::StoredPasswordArgon2;
+pub use self::scram::StoredPasswordScram;
+
+mod plain;
 mod scram;
 
 #[allow(clippy::manual_non_exhaustive)]
@@ -228,6 +236,10 @@ impl Display for Mechanism {
             Mechanism::ScramSha1Plus => write!(f, "SCRAM-SHA-1-PLUS"),
         }
     }
+}
+
+pub trait StoredPassword: Debug + FromStr + Display {
+    fn new(plaintext: &str) -> Result<Self, Error>;
 }
 
 enum MechanismNegotiatorResult {

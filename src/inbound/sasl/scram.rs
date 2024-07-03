@@ -1,7 +1,12 @@
-use std::io::Cursor;
+use std::{
+    fmt::{Debug, Display, Formatter},
+    io::Cursor,
+    str::FromStr,
+};
 
 use anyhow::{anyhow, Error};
-use digest::{generic_array::GenericArray, Digest, Output};
+use digest::{core_api::BlockSizeUser, generic_array::GenericArray, Digest, Output};
+use password_hash::{rand_core::OsRng, SaltString};
 use rsasl::{
     callback::{Context, Request, SessionCallback, SessionData},
     config::SASLConfig,
@@ -13,9 +18,71 @@ use rsasl::{
 };
 use sha1::Sha1;
 
-use crate::xmpp::jid::Jid;
+use crate::{services::store::StoreHandle, xmpp::jid::Jid};
 
-use super::{MechanismNegotiator, MechanismNegotiatorResult};
+use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword};
+
+#[derive(Debug)]
+pub struct StoredPasswordScram<H>
+where
+    H: Debug + Digest + BlockSizeUser + Clone + Sync,
+{
+    iterations: u32,
+    salt: Vec<u8>,
+    stored_key: Vec<u8>,
+    server_key: Vec<u8>,
+    _hash: std::marker::PhantomData<H>,
+}
+
+impl<H> StoredPassword for StoredPasswordScram<H>
+where
+    H: Debug + Digest + BlockSizeUser + Clone + Sync,
+{
+    fn new(plaintext: &str) -> Result<Self, Error> {
+        let iterations = 4096; // TODO: drastically increase this
+        let salt = SaltString::generate(&mut OsRng);
+        let mut hashed_password = GenericArray::default();
+        // Derive the PBKDF2 key from the password and salt. This is the expensive part
+        // TODO: do we need to off-load this to a separate thread? benchmark!
+        scram::tools::hash_password::<H>(
+            plaintext.as_bytes(),
+            iterations,
+            &salt.as_str().as_bytes()[..],
+            &mut hashed_password,
+        );
+        let (client_key, server_key) =
+            scram::tools::derive_keys::<Sha1>(hashed_password.as_slice());
+        let stored_key = Sha1::digest(client_key);
+
+        Ok(Self {
+            iterations,
+            salt: salt.as_str().as_bytes().to_vec(),
+            stored_key: stored_key.as_slice().to_vec(),
+            server_key: server_key.as_slice().to_vec(),
+            _hash: Default::default(),
+        })
+    }
+}
+
+impl<H> FromStr for StoredPasswordScram<H>
+where
+    H: Debug + Digest + BlockSizeUser + Clone + Sync,
+{
+    type Err = password_hash::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        todo!()
+    }
+}
+
+impl<H> Display for StoredPasswordScram<H>
+where
+    H: Debug + Digest + BlockSizeUser + Clone + Sync,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
 
 pub struct ScramSha1Negotiator {
     sasl_session: Session<SaslValidation>,
@@ -23,23 +90,11 @@ pub struct ScramSha1Negotiator {
 
 impl MechanismNegotiator for ScramSha1Negotiator {
     fn with_credentials() -> Result<Self, Error> {
-        let plain_password = b"password";
-        let salt = b"bad salt";
-        let mut hashed_password = GenericArray::default();
-        // Derive the PBKDF2 key from the password and salt. This is the expensive part
-        // TODO: do we need to off-load this to a separate thread? benchmark!
-        scram::tools::hash_password::<Sha1>(plain_password, 4096, &salt[..], &mut hashed_password);
-        let (client_key, server_key) =
-            scram::tools::derive_keys::<Sha1>(hashed_password.as_slice());
-        let stored_key = Sha1::digest(client_key);
-
+        let plain_password = "password";
+        let stored_password = StoredPasswordScram::<Sha1>::new(plain_password)?;
         let sasl_config = SASLConfig::builder()
             .with_defaults()
-            .with_callback(SaslCallback {
-                salt,
-                server_key,
-                stored_key,
-            })?;
+            .with_callback(SaslCallback { stored_password })?;
 
         let sasl = SASLServer::<SaslValidation>::new(sasl_config);
 
@@ -103,9 +158,7 @@ impl Validation for SaslValidation {
 }
 
 struct SaslCallback {
-    stored_key: Output<Sha1>,
-    server_key: Output<Sha1>,
-    salt: &'static [u8],
+    stored_password: StoredPasswordScram<Sha1>,
 }
 
 impl SessionCallback for SaslCallback {
@@ -116,10 +169,10 @@ impl SessionCallback for SaslCallback {
         request: &mut Request<'_>,
     ) -> Result<(), SessionError> {
         request.satisfy::<ScramStoredPassword>(&ScramStoredPassword {
-            iterations: 4096,
-            salt: self.salt,
-            stored_key: self.stored_key.as_slice(),
-            server_key: self.server_key.as_slice(),
+            iterations: self.stored_password.iterations,
+            salt: self.stored_password.salt.as_slice(),
+            stored_key: self.stored_password.stored_key.as_slice(),
+            server_key: self.stored_password.server_key.as_slice(),
         })?;
         request.satisfy::<Password>(b"password")?;
 

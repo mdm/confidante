@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+argon2 = { version = "0.5.3", features = ["std"] }
 anyhow = "1.0.60"
 base64 = "0.21.5"
 bytes = "1.1.0"
@@ -30,3 +31,5 @@ tokio-stream = "0.1.14"
 uuid = { version = "1.2.2", features = ["v4"] }
 rustls-native-certs = "0.7.0"
 rustls-pemfile = "2.1.1"
+password-hash = "0.5.0"
+sha2 = "0.10.8"

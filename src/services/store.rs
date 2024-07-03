@@ -1,15 +1,28 @@
 use futures::Future;
+use sha1::Sha1;
+use sha2::Sha256;
 use tokio::{
     select,
     sync::{mpsc, oneshot},
 };
 
+use crate::inbound::StoredPassword;
+use crate::inbound::StoredPasswordArgon2;
+use crate::inbound::StoredPasswordScram;
 use crate::xmpp::jid::Jid;
 
 enum Query {
-    GetHashedPassword {
+    GetStoredPasswordArgon2 {
         jid: Jid,
-        tx: oneshot::Sender<Option<String>>,
+        tx: oneshot::Sender<Option<StoredPasswordArgon2>>, // TODO: use Result instead of Option
+    },
+    GetStoredPasswordScramSha1 {
+        jid: Jid,
+        tx: oneshot::Sender<Option<StoredPasswordScram<Sha1>>>, // TODO: use Result instead of Option
+    },
+    GetStoredPasswordScramSha256 {
+        jid: Jid,
+        tx: oneshot::Sender<Option<StoredPasswordScram<Sha256>>>, // TODO: use Result instead of Option
     },
 }
 
@@ -45,9 +58,29 @@ where
 
     async fn handle_query(&mut self, query: Query) {
         match query {
-            Query::GetHashedPassword { jid, tx } => {
-                let result = self.backend.get_hashed_password(jid).await;
-                tx.send(result).unwrap();
+            Query::GetStoredPasswordArgon2 { jid, tx } => {
+                let result = self
+                    .backend
+                    .get_stored_password_argon2(jid)
+                    .await
+                    .and_then(|s| s.as_str().parse::<StoredPasswordArgon2>().ok());
+                tx.send(result).unwrap(); // TODO: handle error
+            }
+            Query::GetStoredPasswordScramSha1 { jid, tx } => {
+                let result = self
+                    .backend
+                    .get_stored_password_scram_sha1(jid)
+                    .await
+                    .and_then(|s| s.as_str().parse::<StoredPasswordScram<Sha1>>().ok());
+                tx.send(result).unwrap(); // TODO: handle error
+            }
+            Query::GetStoredPasswordScramSha256 { jid, tx } => {
+                let result = self
+                    .backend
+                    .get_stored_password_scram_sha256(jid)
+                    .await
+                    .and_then(|s| s.as_str().parse::<StoredPasswordScram<Sha256>>().ok());
+                tx.send(result).unwrap(); // TODO: handle error
             }
         }
     }
@@ -59,13 +92,13 @@ where
     }
 }
 
-struct StoreHandle {
+pub struct StoreHandle {
     queries: mpsc::Sender<Query>,
     commands: mpsc::Sender<Command>,
 }
 
 impl StoreHandle {
-    fn new<B>(backend: B) -> Self
+    pub fn new<B>(backend: B) -> Self
     where
         B: StoreBackend + Send + 'static,
     {
@@ -86,9 +119,31 @@ impl StoreHandle {
         }
     }
 
-    async fn get_hashed_password(&mut self, jid: Jid) -> Option<String> {
+    pub async fn get_stored_password_argon2(&mut self, jid: Jid) -> Option<StoredPasswordArgon2> {
         let (tx, rx) = oneshot::channel();
-        let msg = Query::GetHashedPassword { jid, tx };
+        let msg = Query::GetStoredPasswordArgon2 { jid, tx };
+
+        let _ = self.queries.send(msg).await;
+        rx.await.expect("Store is gone")
+    }
+
+    pub async fn get_stored_password_scram_sha1(
+        &mut self,
+        jid: Jid,
+    ) -> Option<StoredPasswordScram<Sha1>> {
+        let (tx, rx) = oneshot::channel();
+        let msg = Query::GetStoredPasswordScramSha1 { jid, tx };
+
+        let _ = self.queries.send(msg).await;
+        rx.await.expect("Store is gone")
+    }
+
+    pub async fn get_stored_password_scram_sha256(
+        &mut self,
+        jid: Jid,
+    ) -> Option<StoredPasswordScram<Sha256>> {
+        let (tx, rx) = oneshot::channel();
+        let msg = Query::GetStoredPasswordScramSha256 { jid, tx };
 
         let _ = self.queries.send(msg).await;
         rx.await.expect("Store is gone")
@@ -96,7 +151,17 @@ impl StoreHandle {
 }
 
 trait StoreBackend {
-    fn get_hashed_password(&self, jid: Jid) -> impl Future<Output = Option<String>> + Send;
+    fn get_stored_password_argon2(&self, jid: Jid) -> impl Future<Output = Option<String>> + Send;
+
+    fn get_stored_password_scram_sha1(
+        &self,
+        jid: Jid,
+    ) -> impl Future<Output = Option<String>> + Send;
+
+    fn get_stored_password_scram_sha256(
+        &self,
+        jid: Jid,
+    ) -> impl Future<Output = Option<String>> + Send;
 }
 
 #[cfg(test)]
@@ -107,7 +172,15 @@ struct StubStoreBackend {
 
 #[cfg(test)]
 impl StoreBackend for StubStoreBackend {
-    async fn get_hashed_password(&self, _jid: Jid) -> Option<String> {
+    async fn get_stored_password_argon2(&self, _jid: Jid) -> Option<String> {
+        self.hashed_password.clone()
+    }
+
+    async fn get_stored_password_scram_sha1(&self, _jid: Jid) -> Option<String> {
+        self.hashed_password.clone()
+    }
+
+    async fn get_stored_password_scram_sha256(&self, _jid: Jid) -> Option<String> {
         self.hashed_password.clone()
     }
 }
@@ -116,17 +189,20 @@ impl StoreBackend for StubStoreBackend {
 mod test {
     use std::default::Default;
 
+    use argon2::{Argon2, PasswordVerifier};
+
     use super::*;
 
     #[tokio::test]
     async fn test_store_query() {
-        let expected_password = Some("password".to_string());
         let mut store = StoreHandle::new(StubStoreBackend {
-            hashed_password: expected_password.clone(),
+            hashed_password: Some(StoredPasswordArgon2::new("password").unwrap().to_string()),
             ..Default::default()
         });
         let jid = "user@localhost/resource".parse::<Jid>().unwrap();
-        let actual_password = store.get_hashed_password(jid).await;
-        assert_eq!(expected_password, actual_password);
+        let stored_assword = store.get_stored_password_argon2(jid).await.unwrap();
+        assert!(Argon2::default()
+            .verify_password("password".as_bytes(), &stored_assword.hash.password_hash())
+            .is_ok());
     }
 }
