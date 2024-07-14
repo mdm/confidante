@@ -8,6 +8,7 @@ use tokio_stream::StreamExt;
 
 use crate::services::router::ManagementCommand;
 use crate::services::router::RouterHandle;
+use crate::services::store::StoreHandle;
 use crate::xml::namespaces;
 use crate::xmpp::jid::Jid;
 use crate::xmpp::stanza::Stanza;
@@ -83,16 +84,17 @@ where
 {
     stream: XmppStream<C>,
     info: StreamInfo,
-    router_handle: RouterHandle,
+    router: RouterHandle,
     stanza_tx: Sender<Stanza>,
     stanza_rx: Receiver<Stanza>,
+    store: StoreHandle,
 }
 
 impl<C> InboundStream<C>
 where
     C: Connection,
 {
-    pub fn new(connection: C, router_handle: RouterHandle) -> Self {
+    pub fn new(connection: C, router: RouterHandle, store: StoreHandle) -> Self {
         let stream = XmppStream::new(connection);
         let info = StreamInfo::default();
         let (stanza_tx, stanza_rx) = mpsc::channel(STANZA_CHANNEL_BUFFER_SIZE);
@@ -100,9 +102,10 @@ where
         InboundStream {
             stream,
             info,
-            router_handle,
+            router,
             stanza_tx,
             stanza_rx,
+            store,
         }
     }
 
@@ -154,7 +157,7 @@ where
         //TODO: respond with not-authorized target is not yet cleared to send stanzas
         //TODO: respond with not-authorized if not authenticated
 
-        self.router_handle
+        self.router
             .stanzas
             .send(Stanza { element })
             .await
@@ -207,8 +210,14 @@ where
                 self.advertise_features().await?;
             }
             StreamFeatures::Authentication => {
-                let peer_jid =
-                    Some(SaslNegotiator::negotiate_feature(&mut self.stream, element).await?);
+                let peer_jid = Some(
+                    SaslNegotiator::negotiate_feature(
+                        &mut self.stream,
+                        element,
+                        self.store.clone(),
+                    )
+                    .await?,
+                );
                 self.register_peer_jid(peer_jid).await;
                 self.info.features.insert(StreamFeatures::Authentication);
                 self.stream.reset();
@@ -234,7 +243,7 @@ where
 
     async fn register_peer_jid(&mut self, peer_jid: Option<Jid>) {
         if let Some(entity) = self.info.peer_jid.take() {
-            self.router_handle
+            self.router
                 .management
                 .send(ManagementCommand::Unregister(entity))
                 .await
@@ -244,7 +253,7 @@ where
         self.info.peer_jid = peer_jid;
 
         if let Some(entity) = self.info.peer_jid.clone() {
-            self.router_handle
+            self.router
                 .management
                 .send(ManagementCommand::Register(entity, self.stanza_tx.clone()))
                 .await

@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fmt::{Debug, Display},
+    future::Future,
     str::FromStr,
 };
 
@@ -9,6 +10,7 @@ use base64::prelude::*;
 use tokio_stream::StreamExt;
 
 use crate::{
+    services::store::{self, StoreHandle},
     xml::{namespaces, stream_parser::Frame, Element, Node},
     xmpp::{
         jid::Jid,
@@ -68,6 +70,7 @@ impl SaslNegotiator {
     pub async fn negotiate_feature<C>(
         stream: &mut XmppStream<C>,
         element: &Element,
+        store: StoreHandle,
     ) -> Result<Jid, Error>
     where
         C: Connection,
@@ -83,11 +86,11 @@ impl SaslNegotiator {
 
         // TODO: verify mechanism is available
 
-        let mut negotiator = mechanism.negotiator()?; // TODO: handle error locally
+        let mut negotiator = mechanism.negotiator(store)?; // TODO: handle error locally
         let mut response_payload = BASE64_STANDARD.decode(element.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
 
         loop {
-            let result = negotiator.process(response_payload);
+            let result = negotiator.process(response_payload).await;
 
             match result {
                 MechanismNegotiatorResult::Challenge(challenge) => {
@@ -203,11 +206,11 @@ impl Mechanism {
         }
     }
 
-    fn negotiator(&self) -> Result<impl MechanismNegotiator, Error> {
+    fn negotiator(&self, store: StoreHandle) -> Result<impl MechanismNegotiator, Error> {
         match self {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
-            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::with_credentials(),
+            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new("localhost".to_string(), store), // TODO: get domain from stream
             Mechanism::ScramSha1Plus => todo!(),
         }
     }
@@ -238,7 +241,7 @@ impl Display for Mechanism {
     }
 }
 
-pub trait StoredPassword: Debug + FromStr + Display {
+pub trait StoredPassword: FromStr + Display {
     fn new(plaintext: &str) -> Result<Self, Error>;
 }
 
@@ -249,8 +252,11 @@ enum MechanismNegotiatorResult {
 }
 
 trait MechanismNegotiator {
-    fn with_credentials() -> Result<Self, Error>
+    fn new(resolved_domain: String, store: StoreHandle) -> Result<Self, Error>
     where
         Self: Sized;
-    fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult;
+    fn process(
+        &mut self,
+        payload: Vec<u8>,
+    ) -> impl Future<Output = MechanismNegotiatorResult> + Send;
 }

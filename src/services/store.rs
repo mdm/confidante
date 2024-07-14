@@ -1,6 +1,6 @@
-use futures::Future;
-use sha1::Sha1;
-use sha2::Sha256;
+use std::future::Future;
+
+use scram_rs::{ScramSha1Ring, ScramSha256Ring};
 use tokio::{
     select,
     sync::{mpsc, oneshot},
@@ -18,11 +18,11 @@ enum Query {
     },
     GetStoredPasswordScramSha1 {
         jid: Jid,
-        tx: oneshot::Sender<Option<StoredPasswordScram<Sha1>>>, // TODO: use Result instead of Option
+        tx: oneshot::Sender<Option<StoredPasswordScram<ScramSha1Ring>>>, // TODO: use Result instead of Option
     },
     GetStoredPasswordScramSha256 {
         jid: Jid,
-        tx: oneshot::Sender<Option<StoredPasswordScram<Sha256>>>, // TODO: use Result instead of Option
+        tx: oneshot::Sender<Option<StoredPasswordScram<ScramSha256Ring>>>, // TODO: use Result instead of Option
     },
 }
 
@@ -71,16 +71,28 @@ where
                     .backend
                     .get_stored_password_scram_sha1(jid)
                     .await
-                    .and_then(|s| s.as_str().parse::<StoredPasswordScram<Sha1>>().ok());
-                tx.send(result).unwrap(); // TODO: handle error
+                    .and_then(|s| {
+                        s.as_str()
+                            .parse::<StoredPasswordScram<ScramSha1Ring>>()
+                            .ok()
+                    });
+                tx.send(result)
+                    .unwrap_or_else(|_| panic!("could not return value for store query"));
+                // TODO: handle error
             }
             Query::GetStoredPasswordScramSha256 { jid, tx } => {
                 let result = self
                     .backend
                     .get_stored_password_scram_sha256(jid)
                     .await
-                    .and_then(|s| s.as_str().parse::<StoredPasswordScram<Sha256>>().ok());
-                tx.send(result).unwrap(); // TODO: handle error
+                    .and_then(|s| {
+                        s.as_str()
+                            .parse::<StoredPasswordScram<ScramSha256Ring>>()
+                            .ok()
+                    });
+                tx.send(result)
+                    .unwrap_or_else(|_| panic!("could not return value for store query"));
+                // TODO: handle error
             }
         }
     }
@@ -92,6 +104,7 @@ where
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct StoreHandle {
     queries: mpsc::Sender<Query>,
     commands: mpsc::Sender<Command>,
@@ -119,7 +132,7 @@ impl StoreHandle {
         }
     }
 
-    pub async fn get_stored_password_argon2(&mut self, jid: Jid) -> Option<StoredPasswordArgon2> {
+    pub async fn get_stored_password_argon2(&self, jid: Jid) -> Option<StoredPasswordArgon2> {
         let (tx, rx) = oneshot::channel();
         let msg = Query::GetStoredPasswordArgon2 { jid, tx };
 
@@ -128,9 +141,9 @@ impl StoreHandle {
     }
 
     pub async fn get_stored_password_scram_sha1(
-        &mut self,
+        &self,
         jid: Jid,
-    ) -> Option<StoredPasswordScram<Sha1>> {
+    ) -> Option<StoredPasswordScram<ScramSha1Ring>> {
         let (tx, rx) = oneshot::channel();
         let msg = Query::GetStoredPasswordScramSha1 { jid, tx };
 
@@ -139,9 +152,9 @@ impl StoreHandle {
     }
 
     pub async fn get_stored_password_scram_sha256(
-        &mut self,
+        &self,
         jid: Jid,
-    ) -> Option<StoredPasswordScram<Sha256>> {
+    ) -> Option<StoredPasswordScram<ScramSha256Ring>> {
         let (tx, rx) = oneshot::channel();
         let msg = Query::GetStoredPasswordScramSha256 { jid, tx };
 
@@ -164,13 +177,13 @@ trait StoreBackend {
     ) -> impl Future<Output = Option<String>> + Send;
 }
 
-#[cfg(test)]
+// #[cfg(test)] // TODO: only compile this for tests
 #[derive(Default)]
-struct StubStoreBackend {
-    hashed_password: Option<String>,
+pub struct StubStoreBackend {
+    pub hashed_password: Option<String>,
 }
 
-#[cfg(test)]
+// #[cfg(test)] // TODO: only compile this for tests
 impl StoreBackend for StubStoreBackend {
     async fn get_stored_password_argon2(&self, _jid: Jid) -> Option<String> {
         self.hashed_password.clone()
