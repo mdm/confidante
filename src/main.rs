@@ -6,8 +6,11 @@ mod utils;
 mod xml;
 mod xmpp;
 
+use scram_rs::ScramSha1Ring;
+
 use inbound::connection::debug::DebugConnection;
 use inbound::connection::tcp::TcpConnection;
+use inbound::{StoredPassword, StoredPasswordScram};
 use services::router::RouterHandle;
 use services::store::{StoreHandle, StubStoreBackend};
 use settings::Settings;
@@ -22,8 +25,12 @@ async fn main() -> Result<(), Error> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:5222").await?;
 
     let router = RouterHandle::new();
-    let hashed_password = Some("password".to_string());
-    let store_backend = StubStoreBackend { hashed_password };
+    let stored_password_scram_sha1 =
+        Some(StoredPasswordScram::<ScramSha1Ring>::new("password")?.to_string());
+    let store_backend = StubStoreBackend {
+        stored_password_scram_sha1,
+        ..Default::default()
+    };
     let store = StoreHandle::new(store_backend);
 
     loop {

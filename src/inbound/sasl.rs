@@ -245,6 +245,13 @@ pub trait StoredPassword: FromStr + Display {
     fn new(plaintext: &str) -> Result<Self, Error>;
 }
 
+#[derive(Debug)]
+pub enum StoredPasswordKind {
+    Argon2,
+    ScramSha1,
+    ScramSha256,
+}
+
 enum MechanismNegotiatorResult {
     Challenge(Vec<u8>),
     Success(Jid, Option<Vec<u8>>),

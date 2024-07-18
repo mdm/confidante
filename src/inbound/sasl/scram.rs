@@ -16,7 +16,7 @@ use sha1::Sha1;
 
 use crate::{services::store::StoreHandle, xmpp::jid::Jid};
 
-use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword};
+use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordKind};
 
 #[derive(Debug)]
 pub struct StoredPasswordScram<H>
@@ -53,7 +53,7 @@ impl<H> FromStr for StoredPasswordScram<H>
 where
     H: ScramHashing,
 {
-    type Err = password_hash::Error;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         todo!()
@@ -141,10 +141,14 @@ impl AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper {
             self.resolved_domain.clone(),
             None,
         );
-        let stored_password = self.store.get_stored_password_scram_sha1(jid).await;
+        let stored_password = self
+            .store
+            .get_stored_password(jid, StoredPasswordKind::ScramSha1)
+            .await
+            .and_then(|password| password.parse::<StoredPasswordScram<ScramSha1Ring>>());
 
         match stored_password {
-            Some(stored_password) => match stored_password.stored_password {
+            Ok(stored_password) => match stored_password.stored_password {
                 ScramPassword::UserPasswordData {
                     salted_hashed_password,
                     salt_b64,
@@ -158,7 +162,7 @@ impl AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper {
                 )),
                 _ => ScramPassword::not_found::<ScramSha1Ring>(),
             },
-            None => ScramPassword::not_found::<ScramSha1Ring>(),
+            Err(_) => ScramPassword::not_found::<ScramSha1Ring>(),
         }
     }
 }

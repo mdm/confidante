@@ -26,9 +26,9 @@ use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
 use starttls::StarttlsNegotiator;
 
-pub use self::sasl::StoredPassword;
 pub use self::sasl::StoredPasswordArgon2;
 pub use self::sasl::StoredPasswordScram;
+pub use self::sasl::{StoredPassword, StoredPasswordKind};
 
 mod bind;
 pub mod connection;
