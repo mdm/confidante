@@ -4,15 +4,14 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, Error};
-use digest::{core_api::BlockSizeUser, Digest};
+use anyhow::{anyhow, bail, Error};
+use base64::prelude::*;
 use password_hash::{rand_core::OsRng, SaltString};
 use scram_rs::{
     async_trait, scram_async::AsyncScramServer, AsyncScramAuthServer, AsyncScramCbHelper,
-    ScramHashing, ScramNonce, ScramPassword, ScramResult, ScramResultServer, ScramSha1Ring,
-    SCRAM_TYPES,
+    ScramHashing, ScramKey, ScramNonce, ScramPassword, ScramResult, ScramResultServer,
+    ScramSha1Ring, SCRAM_TYPES,
 };
-use sha1::Sha1;
 
 use crate::{services::store::StoreHandle, xmpp::jid::Jid};
 
@@ -56,7 +55,30 @@ where
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+        let parts: Vec<&str> = s.split('$').collect();
+
+        if parts.len() != 7 {
+            bail!("Invalid SCRAM password format");
+        }
+
+        let iterations = parts[2].parse::<NonZero<u32>>()?;
+        let salt_base64 = parts[3].to_string();
+        let salted_hashed_password = BASE64_STANDARD.decode(parts[4])?;
+        let client_key = BASE64_STANDARD.decode(parts[5])?;
+        let server_key = BASE64_STANDARD.decode(parts[6])?;
+        let mut scram_keys = ScramKey::new();
+        scram_keys.set_client_key(client_key);
+        scram_keys.set_server_key(server_key);
+
+        Ok(Self {
+            stored_password: ScramPassword::found_secret_password(
+                salted_hashed_password,
+                salt_base64,
+                iterations,
+                Some(scram_keys),
+            ),
+            _hash_type: Default::default(),
+        })
     }
 }
 
@@ -65,7 +87,20 @@ where
     H: ScramHashing,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        todo!()
+        let salted_hashed_password = self.stored_password.get_salted_hashed_password();
+        let salt_base64 = self.stored_password.get_salt_base64();
+        let iterations = self.stored_password.get_iterations();
+        let scram_keys = self.stored_password.get_scram_keys();
+
+        let salted_hashed_password = BASE64_STANDARD.encode(salted_hashed_password);
+        let client_key = BASE64_STANDARD.encode(scram_keys.get_clinet_key());
+        let server_key = BASE64_STANDARD.encode(scram_keys.get_server_key());
+
+        write!(
+            f,
+            "$SCRAM-SHA-1${}${}${}${}${}",
+            iterations, salt_base64, salted_hashed_password, client_key, server_key
+        )
     }
 }
 
