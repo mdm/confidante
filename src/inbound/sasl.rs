@@ -39,9 +39,6 @@ impl SaslNegotiator {
         if Self::mechanism_available(&Mechanism::External, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::External.to_element()));
         }
-        if Self::mechanism_available(&Mechanism::ScramSha1Plus, secure, authenticated) {
-            available_mechanisms.push(Node::Element(Mechanism::ScramSha1Plus.to_element()));
-        }
         if Self::mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::ScramSha1.to_element()));
         }
@@ -177,7 +174,6 @@ impl SaslNegotiator {
             Mechanism::External => secure && authenticated,
             Mechanism::Plain => secure,
             Mechanism::ScramSha1 => true,
-            Mechanism::ScramSha1Plus => secure,
         }
     }
 }
@@ -193,7 +189,6 @@ enum Mechanism {
     External,
     Plain,
     ScramSha1,
-    ScramSha1Plus,
 }
 
 impl Mechanism {
@@ -211,7 +206,6 @@ impl Mechanism {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
             Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new("localhost".to_string(), store), // TODO: get domain from stream
-            Mechanism::ScramSha1Plus => todo!(),
         }
     }
 }
@@ -224,7 +218,6 @@ impl TryFrom<&str> for Mechanism {
             "EXTERNAL" => Ok(Mechanism::External),
             "PLAIN" => Ok(Mechanism::Plain),
             "SCRAM-SHA-1" => Ok(Mechanism::ScramSha1),
-            "SCRAM-SHA-1-PLUS" => Ok(Mechanism::ScramSha1Plus),
             _ => bail!(SaslError::UnsupportedMechanism(value.into())),
         }
     }
@@ -236,7 +229,6 @@ impl Display for Mechanism {
             Mechanism::External => write!(f, "EXTERNAL"),
             Mechanism::Plain => write!(f, "PLAIN"),
             Mechanism::ScramSha1 => write!(f, "SCRAM-SHA-1"),
-            Mechanism::ScramSha1Plus => write!(f, "SCRAM-SHA-1-PLUS"),
         }
     }
 }
