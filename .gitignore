@@ -1,3 +1,5 @@
 /target
 log/*
 *.pem
+db/*.sqlite3
+

@@ -33,6 +33,7 @@ pub struct Tls {
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
+    pub database_url: String,
     pub domain: Jid, // TODO: can we deserialize this into a Jid?
     pub tls: Tls,
 }

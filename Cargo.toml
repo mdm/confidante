@@ -13,7 +13,7 @@ bytes = "1.6.1"
 config = { version = "0.14.0", features = ["yaml"] }
 digest = "0.10.7"
 futures = "0.3.30"
-pin-project = "1.1.5"                                      # TODO: use pin-project-lite instead?
+pin-project = "1.1.5"                                                # TODO: use pin-project-lite instead?
 quick-xml = "0.36.1"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
@@ -33,4 +33,4 @@ rustls-pemfile = "2.1.2"
 password-hash = "0.5.0"
 sha2 = "0.10.8"
 scram-rs = { version = "0.12.0", features = ["use_ring"] }
-sqlx = "0.8.0"
+sqlx = { version = "0.8.0", features = ["runtime-tokio", "sqlite"] }

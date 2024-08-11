@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use tokio::{
     select,
     sync::{mpsc, oneshot},
@@ -9,9 +9,10 @@ use tokio::{
 use crate::inbound::StoredPasswordKind;
 use crate::xmpp::jid::Jid;
 
-pub use self::fake::FakeStoreBackend;
+pub use self::sqlite::SqliteStoreBackend;
 
 mod fake;
+mod sqlite;
 
 enum Query {
     GetStoredPassword {
@@ -167,6 +168,8 @@ mod test {
 
     use crate::inbound::StoredPassword;
     use crate::inbound::StoredPasswordArgon2;
+
+    use self::fake::FakeStoreBackend;
 
     use super::*;
 
