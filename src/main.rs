@@ -12,7 +12,7 @@ use inbound::connection::debug::DebugConnection;
 use inbound::connection::tcp::TcpConnection;
 use inbound::{StoredPassword, StoredPasswordScram};
 use services::router::RouterHandle;
-use services::store::{StoreHandle, StubStoreBackend};
+use services::store::{FakeStoreBackend, StoreHandle};
 use settings::Settings;
 
 use crate::inbound::InboundStream;
@@ -27,7 +27,7 @@ async fn main() -> Result<(), Error> {
     let router = RouterHandle::new();
     let stored_password_scram_sha1 =
         Some(StoredPasswordScram::<ScramSha1Ring>::new("password")?.to_string());
-    let store_backend = StubStoreBackend {
+    let store_backend = FakeStoreBackend {
         stored_password_scram_sha1,
         ..Default::default()
     };
