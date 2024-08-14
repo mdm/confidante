@@ -23,6 +23,17 @@ enum Query {
 }
 
 enum Command {
+    AddUser {
+        jid: Jid,
+        stored_password_argon2: String,
+        stored_password_scram_sha1: String,
+        stored_password_scram_sha256: String,
+        result_tx: oneshot::Sender<Result<(), Error>>,
+    },
+    RemoveUser {
+        jid: Jid,
+        result_tx: oneshot::Sender<Result<(), Error>>,
+    },
     SetStoredPassword {
         jid: Jid,
         kind: StoredPasswordKind,
@@ -53,6 +64,7 @@ where
                 Some(command) = self.commands.recv() => {
                     self.handle_command(command).await;
                 }
+                else => break, // TODO: handle channel close more gracefully
             }
         }
     }
@@ -72,12 +84,40 @@ where
 
     async fn handle_command(&mut self, command: Command) {
         match command {
+            Command::AddUser {
+                jid,
+                stored_password_argon2,
+                stored_password_scram_sha1,
+                stored_password_scram_sha256,
+                result_tx,
+            } => {
+                let result = self
+                    .backend
+                    .add_user(
+                        jid,
+                        stored_password_argon2,
+                        stored_password_scram_sha1,
+                        stored_password_scram_sha256,
+                    )
+                    .await;
+                result_tx.send(result).unwrap(); // TODO: handle error
+            }
+            Command::RemoveUser { jid, result_tx } => {
+                let result = self.backend.remove_user(jid).await;
+                result_tx.send(result).unwrap(); // TODO: handle error
+            }
             Command::SetStoredPassword {
                 jid,
                 kind,
                 stored_password,
                 result_tx,
-            } => {}
+            } => {
+                let result = self
+                    .backend
+                    .set_stored_password(jid, kind, stored_password)
+                    .await;
+                result_tx.send(result).unwrap(); // TODO: handle error
+            }
         }
     }
 }
@@ -108,6 +148,34 @@ impl StoreHandle {
             queries: queries_tx,
             commands: commands_tx,
         }
+    }
+
+    pub async fn add_user(
+        &self,
+        jid: Jid,
+        stored_password_argon2: String,
+        stored_password_scram_sha1: String,
+        stored_password_scram_sha256: String,
+    ) -> Result<(), Error> {
+        let (result_tx, result_rx) = oneshot::channel();
+        let msg = Command::AddUser {
+            jid,
+            stored_password_argon2,
+            stored_password_scram_sha1,
+            stored_password_scram_sha256,
+            result_tx,
+        };
+
+        let _ = self.commands.send(msg).await;
+        result_rx.await.expect("Store is gone")
+    }
+
+    pub async fn remove_user(&self, jid: Jid) -> Result<(), Error> {
+        let (result_tx, result_rx) = oneshot::channel();
+        let msg = Command::RemoveUser { jid, result_tx };
+
+        let _ = self.commands.send(msg).await;
+        result_rx.await.expect("Store is gone")
     }
 
     pub async fn get_stored_password(
@@ -146,6 +214,16 @@ impl StoreHandle {
 }
 
 trait StoreBackend {
+    fn add_user(
+        &mut self,
+        jid: Jid,
+        stored_password_argon2: String,
+        stored_password_scram_sha1: String,
+        stored_password_scram_sha256: String,
+    ) -> impl Future<Output = Result<(), Error>> + Send;
+
+    fn remove_user(&mut self, jid: Jid) -> impl Future<Output = Result<(), Error>> + Send;
+
     fn get_stored_password(
         &self,
         jid: Jid,

@@ -6,42 +6,87 @@ mod utils;
 mod xml;
 mod xmpp;
 
+use clap::{Parser, Subcommand};
 use inbound::connection::debug::DebugConnection;
 use inbound::connection::tcp::TcpConnection;
+use inbound::{StoredPassword, StoredPasswordArgon2, StoredPasswordScram};
+use scram_rs::{ScramSha1Ring, ScramSha256Ring};
 use services::router::RouterHandle;
 use services::store::{SqliteStoreBackend, StoreHandle};
 use settings::Settings;
+use xmpp::jid::Jid;
 
 use crate::inbound::InboundStream;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
+#[derive(Parser)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand)]
+enum Commands {
+    AddUser { bare_jid: String, password: String },
+    RemoveUser { bare_jid: String },
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     Settings::init()?;
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:5222").await?;
 
-    let router = RouterHandle::new();
     let store_backend = SqliteStoreBackend::new().await?;
     let store = StoreHandle::new(store_backend);
 
-    loop {
-        let (connection, _) = listener.accept().await?;
+    let cli = Cli::parse();
+    match cli.command {
+        Some(Commands::AddUser { bare_jid, password }) => {
+            let bare_jid = bare_jid.parse::<Jid>()?.to_bare();
+            let stored_password_argon2 = StoredPasswordArgon2::new(&password)?.to_string();
+            let stored_password_scram_sha1 =
+                StoredPasswordScram::<ScramSha1Ring>::new(&password)?.to_string();
+            let stored_password_scram_sha256 =
+                StoredPasswordScram::<ScramSha256Ring>::new(&password)?.to_string();
+            store
+                .add_user(
+                    bare_jid,
+                    stored_password_argon2,
+                    stored_password_scram_sha1,
+                    stored_password_scram_sha256,
+                )
+                .await?;
+        }
+        Some(Commands::RemoveUser { bare_jid }) => {
+            let bare_jid = bare_jid.parse::<Jid>()?.to_bare();
+            store.remove_user(bare_jid).await?;
+        }
+        None => {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:5222").await?;
 
-        // TODO: handle shutdown
+            let router = RouterHandle::new();
 
-        let router = router.clone();
-        let store = store.clone();
+            loop {
+                let (connection, _) = listener.accept().await?;
 
-        tokio::spawn(async move {
-            let connection = TcpConnection::new(connection, true);
-            let connection = DebugConnection::try_new(connection).await.unwrap();
-            println!("New connection: {}", connection.uuid());
+                // TODO: handle shutdown
 
-            let mut stream = InboundStream::new(connection, router, store);
-            stream.handle().await;
+                let router = router.clone();
+                let store = store.clone();
 
-            // TODO: close connection (or does drop do that?)
-        });
+                tokio::spawn(async move {
+                    let connection = TcpConnection::new(connection, true);
+                    let connection = DebugConnection::try_new(connection).await.unwrap();
+                    println!("New connection: {}", connection.uuid());
+
+                    let mut stream = InboundStream::new(connection, router, store);
+                    stream.handle().await;
+
+                    // TODO: close connection (or does drop do that?)
+                });
+            }
+        }
     }
+
+    Ok(())
 }
