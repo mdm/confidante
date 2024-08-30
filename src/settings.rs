@@ -87,7 +87,7 @@ fn init_tls_server_config<'d, D: Deserializer<'d>>(
     let config = TlsConfig::deserialize(deserializer)?;
 
     let mut root_cert_store = RootCertStore::empty();
-    for cert in load_native_certs().map_err(serde::de::Error::custom)? {
+    for cert in load_native_certs().certs {
         root_cert_store
             .add(cert)
             .map_err(serde::de::Error::custom)?;

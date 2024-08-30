@@ -9,11 +9,14 @@ use base64::prelude::*;
 use password_hash::{rand_core::OsRng, SaltString};
 use scram_rs::{
     async_trait, scram_async::AsyncScramServer, AsyncScramAuthServer, AsyncScramCbHelper,
-    ScramHashing, ScramKey, ScramNonce, ScramPassword, ScramResult, ScramResultServer,
+    ScramCommon, ScramHashing, ScramKey, ScramNonce, ScramPassword, ScramResult, ScramResultServer,
     ScramSha1Ring, SCRAM_TYPES,
 };
 
-use crate::{services::store::StoreHandle, xmpp::jid::Jid};
+use crate::{
+    services::store::{self, StoreHandle},
+    xmpp::jid::Jid,
+};
 
 use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordKind};
 
@@ -33,6 +36,7 @@ where
     fn new(plaintext: &str) -> Result<Self, Error> {
         let iterations = NonZero::new(4096).expect("Iterations must be positive"); // TODO: drastically increase this
         let salt = SaltString::generate(&mut OsRng);
+        dbg!(&salt);
         let stored_password = ScramPassword::salt_password_with_params::<&str, H>(
             plaintext,
             Some(salt.as_str().as_bytes().to_vec()),
@@ -61,8 +65,10 @@ where
             bail!("Invalid SCRAM password format");
         }
 
+        dbg!(&parts);
         let iterations = parts[2].parse::<NonZero<u32>>()?;
         let salt_base64 = parts[3].to_string();
+        dbg!(&salt_base64);
         let salted_hashed_password = BASE64_STANDARD.decode(parts[4])?;
         let client_key = BASE64_STANDARD.decode(parts[5])?;
         let server_key = BASE64_STANDARD.decode(parts[6])?;
@@ -176,10 +182,14 @@ impl AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper {
             self.resolved_domain.clone(),
             None,
         );
+        dbg!(&jid);
         let stored_password = self
             .store
             .get_stored_password(jid, StoredPasswordKind::ScramSha1)
-            .await
+            .await;
+        dbg!(&stored_password);
+
+        let stored_password = stored_password
             .and_then(|password| password.parse::<StoredPasswordScram<ScramSha1Ring>>());
 
         match stored_password {

@@ -125,7 +125,7 @@ impl StoreBackend for SqliteStoreBackend {
 
 #[derive(sqlx::FromRow)]
 struct User {
-    jid: String,
+    bare_jid: String,
     stored_password_argon2: String,
     stored_password_scram_sha1: String,
     stored_password_scram_sha256: String,
