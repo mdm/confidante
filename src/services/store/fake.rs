@@ -5,7 +5,7 @@ use crate::xmpp::jid::Jid;
 
 use super::StoreBackend;
 
-// #[cfg(test)] // TODO: only compile this for tests
+#[cfg(test)]
 #[derive(Default)]
 pub struct FakeStoreBackend {
     pub stored_password_argon2: Option<String>,
@@ -13,7 +13,7 @@ pub struct FakeStoreBackend {
     pub stored_password_scram_sha256: Option<String>,
 }
 
-// #[cfg(test)] // TODO: only compile this for tests
+#[cfg(test)]
 impl StoreBackend for FakeStoreBackend {
     async fn add_user(
         &mut self,
