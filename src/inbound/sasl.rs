@@ -1,10 +1,16 @@
-use std::{collections::HashMap, fmt::Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+    future::Future,
+    str::FromStr,
+};
 
 use anyhow::{bail, Error};
 use base64::prelude::*;
 use tokio_stream::StreamExt;
 
 use crate::{
+    services::store::{self, StoreHandle},
     xml::{namespaces, stream_parser::Frame, Element, Node},
     xmpp::{
         jid::Jid,
@@ -12,6 +18,10 @@ use crate::{
     },
 };
 
+pub use self::plain::StoredPasswordArgon2;
+pub use self::scram::StoredPasswordScram;
+
+mod plain;
 mod scram;
 
 #[allow(clippy::manual_non_exhaustive)]
@@ -28,9 +38,6 @@ impl SaslNegotiator {
 
         if Self::mechanism_available(&Mechanism::External, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::External.to_element()));
-        }
-        if Self::mechanism_available(&Mechanism::ScramSha1Plus, secure, authenticated) {
-            available_mechanisms.push(Node::Element(Mechanism::ScramSha1Plus.to_element()));
         }
         if Self::mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
             available_mechanisms.push(Node::Element(Mechanism::ScramSha1.to_element()));
@@ -60,6 +67,7 @@ impl SaslNegotiator {
     pub async fn negotiate_feature<C>(
         stream: &mut XmppStream<C>,
         element: &Element,
+        store: StoreHandle,
     ) -> Result<Jid, Error>
     where
         C: Connection,
@@ -75,11 +83,11 @@ impl SaslNegotiator {
 
         // TODO: verify mechanism is available
 
-        let mut negotiator = mechanism.negotiator()?; // TODO: handle error locally
+        let mut negotiator = mechanism.negotiator(store)?; // TODO: handle error locally
         let mut response_payload = BASE64_STANDARD.decode(element.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
 
         loop {
-            let result = negotiator.process(response_payload);
+            let result = negotiator.process(response_payload).await;
 
             match result {
                 MechanismNegotiatorResult::Challenge(challenge) => {
@@ -166,7 +174,6 @@ impl SaslNegotiator {
             Mechanism::External => secure && authenticated,
             Mechanism::Plain => secure,
             Mechanism::ScramSha1 => true,
-            Mechanism::ScramSha1Plus => secure,
         }
     }
 }
@@ -182,7 +189,6 @@ enum Mechanism {
     External,
     Plain,
     ScramSha1,
-    ScramSha1Plus,
 }
 
 impl Mechanism {
@@ -195,12 +201,11 @@ impl Mechanism {
         }
     }
 
-    fn negotiator(&self) -> Result<impl MechanismNegotiator, Error> {
+    fn negotiator(&self, store: StoreHandle) -> Result<impl MechanismNegotiator, Error> {
         match self {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
-            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::with_credentials(),
-            Mechanism::ScramSha1Plus => todo!(),
+            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new("localhost".to_string(), store), // TODO: get domain from stream
         }
     }
 }
@@ -213,7 +218,6 @@ impl TryFrom<&str> for Mechanism {
             "EXTERNAL" => Ok(Mechanism::External),
             "PLAIN" => Ok(Mechanism::Plain),
             "SCRAM-SHA-1" => Ok(Mechanism::ScramSha1),
-            "SCRAM-SHA-1-PLUS" => Ok(Mechanism::ScramSha1Plus),
             _ => bail!(SaslError::UnsupportedMechanism(value.into())),
         }
     }
@@ -225,9 +229,19 @@ impl Display for Mechanism {
             Mechanism::External => write!(f, "EXTERNAL"),
             Mechanism::Plain => write!(f, "PLAIN"),
             Mechanism::ScramSha1 => write!(f, "SCRAM-SHA-1"),
-            Mechanism::ScramSha1Plus => write!(f, "SCRAM-SHA-1-PLUS"),
         }
     }
+}
+
+pub trait StoredPassword: FromStr + Display {
+    fn new(plaintext: &str) -> Result<Self, Error>;
+}
+
+#[derive(Debug)]
+pub enum StoredPasswordKind {
+    Argon2,
+    ScramSha1,
+    ScramSha256,
 }
 
 enum MechanismNegotiatorResult {
@@ -237,8 +251,11 @@ enum MechanismNegotiatorResult {
 }
 
 trait MechanismNegotiator {
-    fn with_credentials() -> Result<Self, Error>
+    fn new(resolved_domain: String, store: StoreHandle) -> Result<Self, Error>
     where
         Self: Sized;
-    fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult;
+    fn process(
+        &mut self,
+        payload: Vec<u8>,
+    ) -> impl Future<Output = MechanismNegotiatorResult> + Send;
 }

@@ -1,3 +1,4 @@
+database_url: sqlite://db/db.sqlite3
 domain: localhost
 tls:
   required_for_clients: true

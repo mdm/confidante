@@ -33,6 +33,7 @@ pub struct Tls {
 
 #[derive(Debug, Deserialize)]
 pub struct Settings {
+    pub database_url: String,
     pub domain: Jid, // TODO: can we deserialize this into a Jid?
     pub tls: Tls,
 }
@@ -86,7 +87,7 @@ fn init_tls_server_config<'d, D: Deserializer<'d>>(
     let config = TlsConfig::deserialize(deserializer)?;
 
     let mut root_cert_store = RootCertStore::empty();
-    for cert in load_native_certs().map_err(serde::de::Error::custom)? {
+    for cert in load_native_certs().certs {
         root_cert_store
             .add(cert)
             .map_err(serde::de::Error::custom)?;

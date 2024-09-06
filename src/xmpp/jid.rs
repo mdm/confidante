@@ -50,6 +50,14 @@ impl Jid {
         }
     }
 
+    pub fn to_bare(&self) -> Self {
+        Jid {
+            local: self.local.clone(),
+            domain: self.domain.clone(),
+            resource: None,
+        }
+    }
+
     pub fn bind(&self, resource: String) -> Self {
         Jid {
             local: self.local.clone(),

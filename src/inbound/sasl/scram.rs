@@ -1,144 +1,213 @@
-use std::io::Cursor;
-
-use anyhow::{anyhow, Error};
-use digest::{generic_array::GenericArray, Digest, Output};
-use rsasl::{
-    callback::{Context, Request, SessionCallback, SessionData},
-    config::SASLConfig,
-    mechanisms::scram::{self, properties::ScramStoredPassword},
-    mechname::Mechname,
-    prelude::{SASLServer, Session, SessionError, State},
-    property::{AuthId, Password},
-    validate::{Validate, Validation, ValidationError},
+use std::{
+    fmt::{Debug, Display, Formatter},
+    num::NonZero,
+    str::FromStr,
 };
-use sha1::Sha1;
 
-use crate::xmpp::jid::Jid;
+use anyhow::{anyhow, bail, Error};
+use base64::prelude::*;
+use password_hash::{rand_core::OsRng, SaltString};
+use scram_rs::{
+    async_trait, scram_async::AsyncScramServer, AsyncScramAuthServer, AsyncScramCbHelper,
+    ScramCommon, ScramHashing, ScramKey, ScramNonce, ScramPassword, ScramResult, ScramResultServer,
+    ScramSha1Ring, SCRAM_TYPES,
+};
 
-use super::{MechanismNegotiator, MechanismNegotiatorResult};
+use crate::{
+    services::store::{self, StoreHandle},
+    xmpp::jid::Jid,
+};
+
+use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordKind};
+
+#[derive(Debug)]
+pub struct StoredPasswordScram<H>
+where
+    H: ScramHashing,
+{
+    stored_password: ScramPassword,
+    _hash_type: std::marker::PhantomData<H>,
+}
+
+impl<H> StoredPassword for StoredPasswordScram<H>
+where
+    H: ScramHashing,
+{
+    fn new(plaintext: &str) -> Result<Self, Error> {
+        let iterations = NonZero::new(4096).expect("Iterations must be positive"); // TODO: drastically increase this
+        let salt = SaltString::generate(&mut OsRng);
+        dbg!(&salt);
+        let stored_password = ScramPassword::salt_password_with_params::<&str, H>(
+            plaintext,
+            Some(salt.as_str().as_bytes().to_vec()),
+            Some(iterations),
+            None,
+        )
+        .map_err(|err| anyhow!("Could not create SCRAM password:").context(err))?;
+
+        Ok(Self {
+            stored_password,
+            _hash_type: Default::default(),
+        })
+    }
+}
+
+impl<H> FromStr for StoredPasswordScram<H>
+where
+    H: ScramHashing,
+{
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split('$').collect();
+
+        if parts.len() != 7 {
+            bail!("Invalid SCRAM password format");
+        }
+
+        dbg!(&parts);
+        let iterations = parts[2].parse::<NonZero<u32>>()?;
+        let salt_base64 = parts[3].to_string();
+        dbg!(&salt_base64);
+        let salted_hashed_password = BASE64_STANDARD.decode(parts[4])?;
+        let client_key = BASE64_STANDARD.decode(parts[5])?;
+        let server_key = BASE64_STANDARD.decode(parts[6])?;
+        let mut scram_keys = ScramKey::new();
+        scram_keys.set_client_key(client_key);
+        scram_keys.set_server_key(server_key);
+
+        Ok(Self {
+            stored_password: ScramPassword::found_secret_password(
+                salted_hashed_password,
+                salt_base64,
+                iterations,
+                Some(scram_keys),
+            ),
+            _hash_type: Default::default(),
+        })
+    }
+}
+
+impl<H> Display for StoredPasswordScram<H>
+where
+    H: ScramHashing,
+{
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let salted_hashed_password = self.stored_password.get_salted_hashed_password();
+        let salt_base64 = self.stored_password.get_salt_base64();
+        let iterations = self.stored_password.get_iterations();
+        let scram_keys = self.stored_password.get_scram_keys();
+
+        let salted_hashed_password = BASE64_STANDARD.encode(salted_hashed_password);
+        let client_key = BASE64_STANDARD.encode(scram_keys.get_clinet_key());
+        let server_key = BASE64_STANDARD.encode(scram_keys.get_server_key());
+
+        write!(
+            f,
+            "$SCRAM-SHA-1${}${}${}${}${}",
+            iterations, salt_base64, salted_hashed_password, client_key, server_key
+        )
+    }
+}
 
 pub struct ScramSha1Negotiator {
-    sasl_session: Session<SaslValidation>,
+    resolved_domain: String,
+    server: AsyncScramServer<ScramSha1Ring, ScramAuthHelper, ScramAuthHelper>,
 }
 
 impl MechanismNegotiator for ScramSha1Negotiator {
-    fn with_credentials() -> Result<Self, Error> {
-        let plain_password = b"password";
-        let salt = b"bad salt";
-        let mut hashed_password = GenericArray::default();
-        // Derive the PBKDF2 key from the password and salt. This is the expensive part
-        // TODO: do we need to off-load this to a separate thread? benchmark!
-        scram::tools::hash_password::<Sha1>(plain_password, 4096, &salt[..], &mut hashed_password);
-        let (client_key, server_key) =
-            scram::tools::derive_keys::<Sha1>(hashed_password.as_slice());
-        let stored_key = Sha1::digest(client_key);
+    fn new(resolved_domain: String, store: StoreHandle) -> Result<Self, Error> {
+        let helper = ScramAuthHelper {
+            resolved_domain: resolved_domain.clone(),
+            store,
+        };
 
-        let sasl_config = SASLConfig::builder()
-            .with_defaults()
-            .with_callback(SaslCallback {
-                salt,
-                server_key,
-                stored_key,
-            })?;
+        let scram_type = SCRAM_TYPES.get_scramtype("SCRAM-SHA-1").unwrap();
+        let server = AsyncScramServer::new(helper.clone(), helper, ScramNonce::none(), scram_type)
+            .map_err(|_err| anyhow!("Could not initialize SCRAM server"))?;
 
-        let sasl = SASLServer::<SaslValidation>::new(sasl_config);
-
-        let sasl_session = sasl.start_suggested(Mechname::parse(b"SCRAM-SHA-1").unwrap())?;
-
-        Ok(Self { sasl_session })
+        Ok(Self {
+            resolved_domain,
+            server,
+        })
     }
 
-    fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
-        let mut do_last_step = false;
-        loop {
-            let mut out = Cursor::new(Vec::new());
-            let step_result = if payload.is_empty() || do_last_step {
-                match self.sasl_session.step(None, &mut out) {
-                    Ok(step_result) => step_result,
-                    Err(e) => return MechanismNegotiatorResult::Failure(e.into()),
-                }
-            } else {
-                match self.sasl_session.step(Some(&payload), &mut out) {
-                    Ok(step_result) => step_result,
-                    Err(e) => return MechanismNegotiatorResult::Failure(e.into()),
-                }
-            };
+    async fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
+        let payload = match std::str::from_utf8(&payload) {
+            Ok(payload) => payload,
+            Err(_) => {
+                return MechanismNegotiatorResult::Failure(anyhow!(
+                    "Could not parse payload as UTF-8"
+                ))
+            }
+        };
+        let step_result = self.server.parse_response(payload).await;
 
-            match step_result {
-                (State::Running, Some(_len)) => {
-                    return MechanismNegotiatorResult::Challenge(out.into_inner());
-                }
-                (State::Running, None) => {
-                    // If the other side indicates a completed authentication and
-                    // sends no further authentication data but the last call to
-                    // step returned State::Running you MUST call step a final time
-                    // with a None input! This is critical to upholding all security
-                    // guarantees that different mechanisms offer.
-                    do_last_step = true;
-                }
-                (State::Finished, additional_data) => {
-                    // TODO: Compare identity to stream header
-
-                    let Some(Ok(entity)) = self.sasl_session.validation() else {
-                        return MechanismNegotiatorResult::Failure(anyhow!(
-                            "SASL validation failed"
-                        ));
-                    };
-
-                    let jid = Jid::new(Some(entity), "localhost".to_string(), None);
-
-                    return MechanismNegotiatorResult::Success(
-                        jid,
-                        additional_data.map(|_| out.into_inner()),
-                    );
-                }
+        match step_result {
+            ScramResultServer::Data(challenge) => {
+                MechanismNegotiatorResult::Challenge(challenge.into_bytes())
+            }
+            ScramResultServer::Error(err) => {
+                MechanismNegotiatorResult::Failure(anyhow!(err.message.clone()).context(err))
+            }
+            ScramResultServer::Final(additional_data) => {
+                let username = self.server.get_auth_username().cloned(); // TODO: error out if username is not set at this point
+                let jid = Jid::new(username, self.resolved_domain.clone(), None);
+                let additional_data = if additional_data.is_empty() {
+                    None
+                } else {
+                    Some(additional_data.into_bytes())
+                };
+                MechanismNegotiatorResult::Success(jid, additional_data)
             }
         }
     }
 }
 
-struct SaslValidation;
-impl Validation for SaslValidation {
-    type Value = Result<String, Error>;
+#[derive(Debug, Clone)]
+struct ScramAuthHelper {
+    // TODO: split into two structs, for user lookup and channel binding
+    resolved_domain: String,
+    store: StoreHandle,
 }
 
-struct SaslCallback {
-    stored_key: Output<Sha1>,
-    server_key: Output<Sha1>,
-    salt: &'static [u8],
-}
+#[async_trait]
+impl AsyncScramCbHelper for ScramAuthHelper {}
 
-impl SessionCallback for SaslCallback {
-    fn callback(
-        &self,
-        _session_data: &SessionData,
-        _context: &Context,
-        request: &mut Request<'_>,
-    ) -> Result<(), SessionError> {
-        request.satisfy::<ScramStoredPassword>(&ScramStoredPassword {
-            iterations: 4096,
-            salt: self.salt,
-            stored_key: self.stored_key.as_slice(),
-            server_key: self.server_key.as_slice(),
-        })?;
-        request.satisfy::<Password>(b"password")?;
+#[async_trait]
+impl AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper {
+    async fn get_password_for_user(&self, username: &str) -> ScramResult<ScramPassword> {
+        let jid = Jid::new(
+            Some(username.to_string()),
+            self.resolved_domain.clone(),
+            None,
+        );
+        dbg!(&jid);
+        let stored_password = self
+            .store
+            .get_stored_password(jid, StoredPasswordKind::ScramSha1)
+            .await;
+        dbg!(&stored_password);
 
-        Ok(())
-    }
+        let stored_password = stored_password
+            .and_then(|password| password.parse::<StoredPasswordScram<ScramSha1Ring>>());
 
-    fn validate(
-        &self,
-        _session_data: &SessionData,
-        context: &Context,
-        validate: &mut Validate<'_>,
-    ) -> Result<(), ValidationError> {
-        let authid = context.get_ref::<AuthId>();
-
-        validate.with::<SaslValidation, _>(|| match authid {
-            Some(user) => Ok(Ok(String::from(user))),
-            _ => Ok(Err(anyhow!("Unknown user"))),
-        })?;
-
-        Ok(())
+        match stored_password {
+            Ok(stored_password) => match stored_password.stored_password {
+                ScramPassword::UserPasswordData {
+                    salted_hashed_password,
+                    salt_b64,
+                    iterations,
+                    scram_keys,
+                } => Ok(ScramPassword::found_secret_password(
+                    salted_hashed_password,
+                    salt_b64,
+                    iterations,
+                    Some(scram_keys),
+                )),
+                _ => ScramPassword::not_found::<ScramSha1Ring>(),
+            },
+            Err(_) => ScramPassword::not_found::<ScramSha1Ring>(),
+        }
     }
 }
