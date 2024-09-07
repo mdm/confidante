@@ -34,7 +34,7 @@ pub struct Tls {
 #[derive(Debug, Deserialize)]
 pub struct Settings {
     pub database_url: String,
-    pub domain: Jid, // TODO: can we deserialize this into a Jid?
+    pub domain: Jid,
     pub tls: Tls,
 }
 
@@ -76,7 +76,7 @@ fn load_private_key<'d, D: Deserializer<'d>>(
     let key_der = pkcs8_private_keys(key_file)
         .map(|result| result.unwrap())
         .collect::<Vec<_>>()
-        .remove(0); // TODO: avoid panics
+        .remove(0);
 
     Ok(Pkcs8(key_der))
 }

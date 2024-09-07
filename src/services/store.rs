@@ -64,7 +64,7 @@ where
                 Some(command) = self.commands.recv() => {
                     self.handle_command(command).await;
                 }
-                else => break, // TODO: handle channel close more gracefully
+                else => break,
             }
         }
     }
@@ -77,7 +77,7 @@ where
                 result_tx,
             } => {
                 let result = self.backend.get_stored_password(jid, kind).await;
-                result_tx.send(result).unwrap(); // TODO: handle error
+                result_tx.send(result).unwrap();
             }
         }
     }
@@ -100,11 +100,11 @@ where
                         stored_password_scram_sha256,
                     )
                     .await;
-                result_tx.send(result).unwrap(); // TODO: handle error
+                result_tx.send(result).unwrap();
             }
             Command::RemoveUser { jid, result_tx } => {
                 let result = self.backend.remove_user(jid).await;
-                result_tx.send(result).unwrap(); // TODO: handle error
+                result_tx.send(result).unwrap();
             }
             Command::SetStoredPassword {
                 jid,
@@ -116,7 +116,7 @@ where
                     .backend
                     .set_stored_password(jid, kind, stored_password)
                     .await;
-                result_tx.send(result).unwrap(); // TODO: handle error
+                result_tx.send(result).unwrap();
             }
         }
     }

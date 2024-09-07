@@ -14,7 +14,7 @@ bytes = "1.7.1"
 config = { version = "0.14.0", features = ["yaml"] }
 digest = "0.10.7"
 futures = "0.3.30"
-pin-project = "1.1.5"                                                # TODO: use pin-project-lite instead?
+pin-project = "1.1.5"
 quick-xml = "0.36.1"
 rand = "0.8.5"
 rand_chacha = "0.3.1"

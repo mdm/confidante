@@ -77,14 +77,12 @@ impl SaslNegotiator {
         }
 
         let mechanism = match element.get_attribute("mechanism", None) {
-            Some(mechanism) => Mechanism::try_from(mechanism).unwrap(), // TODO: handle "invalid-mechanism"
+            Some(mechanism) => Mechanism::try_from(mechanism).unwrap(),
             None => bail!("auth element is missing mechanism attribute"),
         };
 
-        // TODO: verify mechanism is available
-
-        let mut negotiator = mechanism.negotiator(store)?; // TODO: handle error locally
-        let mut response_payload = BASE64_STANDARD.decode(element.get_text()).unwrap(); // TODO: handle "incorrect-encoding"
+        let mut negotiator = mechanism.negotiator(store)?;
+        let mut response_payload = BASE64_STANDARD.decode(element.get_text()).unwrap();
 
         loop {
             let result = negotiator.process(response_payload).await;
@@ -155,14 +153,11 @@ impl SaslNegotiator {
             match response.name.as_str() {
                 "response" => {
                     response_payload = BASE64_STANDARD.decode(response.get_text()).unwrap();
-                    // TODO: handle "incorrect-encoding"
                 }
                 "abort" => {
-                    // TODO: send "failure" element
                     bail!("authentication aborted");
                 }
                 _ => {
-                    // TODO: send "failure" element
                     bail!("unexpected element");
                 }
             }
@@ -180,7 +175,6 @@ impl SaslNegotiator {
 
 #[derive(thiserror::Error, Debug)]
 pub enum SaslError {
-    // TODO: do we need this?
     #[error("the SASL mechanism `{0}` is not supported")]
     UnsupportedMechanism(String),
 }
@@ -205,7 +199,7 @@ impl Mechanism {
         match self {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
-            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new("localhost".to_string(), store), // TODO: get domain from stream
+            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new("localhost".to_string(), store),
         }
     }
 }

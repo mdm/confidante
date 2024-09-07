@@ -37,13 +37,6 @@ mod starttls;
 
 const STANZA_CHANNEL_BUFFER_SIZE: usize = 8;
 
-enum State {
-    Connected(StreamId),     // TODO: do we need a consumable token here?
-    Secured(StreamId, bool), // TODO: do we need the proof token here?
-    Authenticated(StreamId, Jid),
-    Bound(StreamId, Jid),
-}
-
 enum ConnectionType {
     Client,
     Server,
@@ -61,7 +54,7 @@ struct StreamInfo {
     jid: Option<Jid>,
     peer_jid: Option<Jid>,
     peer_language: Option<LanguageTag>,
-    connection_type: Option<ConnectionType>, // TODO: move to Connection. Depends on port only.
+    connection_type: Option<ConnectionType>,
     features: HashSet<StreamFeatures>,
 }
 
@@ -127,7 +120,6 @@ where
                 frame = self.stream.reader().next() => {
                     match frame {
                         Some(Ok(Frame::XmlFragment(element))) => self.process_element(element).await?,
-                        // TODO: handle parser errors
                         _ => {
                             // assume peer terminated stream
                             let _ = self.stream.writer().write_stream_close().await;
@@ -138,7 +130,6 @@ where
                 Some(Stanza { element }) = self.stanza_rx.recv() => {
                     self.stream.writer().write_xml_element(&element).await?;
                 }
-                // TODO: handle connection timeouts here
             }
         }
     }
@@ -148,15 +139,9 @@ where
             if let Ok(()) = dbg!(self.negotiate_feature(feature, &element).await) {
                 return Ok(());
             }
-            // TODO: if tag matched the feature but negotiation failed, return error here
         }
 
-        // TODO: filter out unsupported features
-
         // element must be a stanza at this point
-        //TODO: respond with not-authorized target is not yet cleared to send stanzas
-        //TODO: respond with not-authorized if not authenticated
-
         self.router
             .stanzas
             .send(Stanza { element })
@@ -247,7 +232,7 @@ where
                 .management
                 .send(ManagementCommand::Unregister(entity))
                 .await
-                .unwrap(); // TODO: handle error
+                .unwrap();
         }
 
         self.info.peer_jid = peer_jid;
@@ -257,7 +242,7 @@ where
                 .management
                 .send(ManagementCommand::Register(entity, self.stanza_tx.clone()))
                 .await
-                .unwrap(); // TODO: handle error
+                .unwrap();
         }
     }
 
@@ -301,8 +286,6 @@ where
             bail!("expected xml frame");
         };
 
-        // TODO: check "stream" namespace here or in parser?
-
         let Frame::StreamStart(inbound_header) = frame else {
             self.send_stream_header(None).await?;
             self.handle_unrecoverable_error(anyhow!("expected stream header"))
@@ -310,18 +293,14 @@ where
             bail!("expected stream header");
         };
 
-        // TODO: check if `to` is a valid domain for this server (and do virtual hosting resolution here?)
-        // TODO: only accept new header attributes if they are not already set
-
         self.info.jid = inbound_header.to;
         self.info.peer_language = inbound_header.language;
-        self.info.connection_type = Some(ConnectionType::Client); // TODO: don't hardcode this
+        self.info.connection_type = Some(ConnectionType::Client);
 
         self.send_stream_header(self.info.peer_jid.clone()).await
     }
 
     async fn send_stream_header(&mut self, to: Option<Jid>) -> Result<(), Error> {
-        // TODO: unify StreamInfo and StreamHeader? Or is there benefit in keeping them separate?
         let outbound_header = StreamHeader {
             from: Some(get_settings().domain.clone()),
             to,
@@ -355,7 +334,7 @@ where
             })],
         };
 
-        self.stream.writer().write_xml_element(&error).await?; // TODO: add proper error handling and handle error during error delivery
+        self.stream.writer().write_xml_element(&error).await?;
         self.stream.writer().write_stream_close().await
     }
 }

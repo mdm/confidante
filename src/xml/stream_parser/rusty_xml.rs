@@ -7,6 +7,7 @@ use rustyxml::{Element as RustyXmlElement, ElementBuilder, Event, Parser};
 use tokio::io::{AsyncRead, ReadBuf};
 use tokio_stream::Stream;
 
+use crate::xml::namespaces::XMPP_STREAMS;
 use crate::xml::stream_parser::{Frame, StreamHeader};
 use crate::xml::{Element, Node};
 use crate::xmpp::stream_header::LanguageTag;
@@ -17,7 +18,7 @@ fn valid_stream_tag(name: &String, namespace: &Option<String>) -> bool {
     }
 
     match namespace {
-        Some(uri) => uri == "http://etherx.jabber.org/streams",
+        Some(uri) => uri == XMPP_STREAMS,
         None => false,
     }
 }
@@ -105,12 +106,9 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
                     return Poll::Ready(Some(Ok(Frame::StreamStart(header))));
                 }
                 Ok(Event::ElementEnd(tag)) if valid_stream_tag(&tag.name, &tag.ns) => {
-                    // TODO: reset parser & builder? discard data at least
                     return Poll::Ready(None);
                 }
                 Err(err) => {
-                    // TODO: detect incomplete parses? or are those not even returned by the iterator?
-                    dbg!("parser error");
                     return Poll::Ready(Some(Err(anyhow!(err))));
                 }
                 _ => {}
@@ -139,7 +137,6 @@ impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
                 this.parser.feed_str(str);
             }
             Err(err) => {
-                dbg!("utf8 error");
                 return Poll::Ready(Some(Err(anyhow!(err))));
             }
         }

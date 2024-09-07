@@ -12,7 +12,6 @@ pub mod rusty_xml;
 pub enum Frame {
     StreamStart(StreamHeader),
     XmlFragment(Element),
-    // TODO: Variant for character data (e.g. whitespace keep-alive)
 }
 
 pub trait StreamParser: Stream<Item = Result<Frame, Error>> + Unpin {

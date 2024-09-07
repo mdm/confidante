@@ -20,7 +20,6 @@ pub struct ResourceBindingNegotiator {
 
 impl ResourceBindingNegotiator {
     pub fn advertise_feature() -> Element {
-        // TODO: decide if this should be part of a trait
         let mut attributes = HashMap::new();
         attributes.insert(
             ("xmlns".to_string(), None),
@@ -43,8 +42,7 @@ impl ResourceBindingNegotiator {
     where
         C: Connection,
     {
-        if element.name != "iq" {
-            // TODO: check namespace
+        if element.name != "iq" && element.namespace.as_deref() != Some(namespaces::XMPP_CLIENT) {
             bail!("expected IQ stanza");
         }
 
@@ -64,8 +62,6 @@ impl ResourceBindingNegotiator {
             Some(requested_resource) => requested_resource.get_text(),
             None => uuid::Uuid::new_v4().to_string(),
         };
-
-        // TODO: check resource availability and maximum number of connected resources
 
         let Some(entity) = entity else {
             bail!("entity to bind is unknown");

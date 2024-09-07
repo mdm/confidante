@@ -37,7 +37,6 @@ impl Connection for TcpConnection {
     fn upgrade(self, config: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
         match self.socket {
             Socket::Plain(socket) => {
-                // TODO: can we move the acceptor construction to the settings module?
                 let accept = TlsAcceptor::from(config).accept(socket);
 
                 Ok(TcpConnectionUpgrade { accept })

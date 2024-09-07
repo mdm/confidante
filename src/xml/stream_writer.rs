@@ -42,7 +42,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
             bail!("`from` field is required in outgoing stream header");
         };
 
-        let mut rng = rand_chacha::ChaCha20Rng::from_entropy(); // TODO: use UUID instead?
+        let mut rng = rand_chacha::ChaCha20Rng::from_entropy();
         let mut id_raw = [0u8; 16];
         rng.fill_bytes(&mut id_raw);
         let id_encoded = BASE64_STANDARD.encode(id_raw);
@@ -176,7 +176,6 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
                 }
                 None => {
                     debug_assert!(false, "namespace not declared");
-                    // TODO: declare namespace with generated prefix and write anyways
                 }
             },
             None => {
@@ -207,14 +206,12 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
                 Some(namespace) => match self.lookup_namespace_prefix(namespace) {
                     Some("") => {
                         debug_assert!(false, "cannot use default namespace for attribute");
-                        // TODO: declare namespace with generated prefix and write anyways
                     }
                     Some(prefix) => {
                         xml.push_str(&format!(r#" {}:{}="{}""#, prefix, attribute, value,));
                     }
                     None => {
                         debug_assert!(false, "namespace not declared");
-                        // TODO: declare namespace with generated prefix and write anyways
                     }
                 },
                 None => {
@@ -267,7 +264,6 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
                 }
                 None => {
                     debug_assert!(false, "namespace not declared");
-                    // TODO: declare namespace with generated prefix and write anyways
                 }
             },
             None => {

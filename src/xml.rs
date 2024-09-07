@@ -15,7 +15,6 @@ pub enum Node {
 
 #[derive(Debug)]
 pub struct Element {
-    // TODO: should we avoid udsing raw strings and replace with newtype?
     pub name: String,
     pub namespace: Option<String>,
     pub attributes: HashMap<(String, Option<String>), String>,
@@ -48,7 +47,7 @@ impl Element {
             match child {
                 Node::Element(element) => text.push_str(&element.get_text()),
                 Node::Text(s) => text.push_str(s),
-                Node::CData(s) => text.push_str(s), // TODO: is this correct?
+                Node::CData(s) => text.push_str(s),
                 _ => {}
             }
         }

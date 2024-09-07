@@ -75,7 +75,7 @@ impl<S> StreamRecorder<S> {
 
 impl<S> AsyncRead for StreamRecorder<S>
 where
-    S: AsyncRead + Unpin, // TODO: remove unneeded?
+    S: AsyncRead + Unpin,
 {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
@@ -89,7 +89,6 @@ where
                 me.input_buffer_read = 0;
                 me.input_buffer_written = 0;
                 let mut input_buffer = ReadBuf::new(me.input_buffer.as_mut());
-                // input_buffer.set_filled(self.input_buffer_read);
 
                 match Pin::new(&mut me.inner_stream).poll_read(cx, &mut input_buffer) {
                     Poll::Ready(Ok(_)) => {
@@ -98,7 +97,7 @@ where
                         me.input_buffer_read = filled_len;
                     }
                     Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                    Poll::Pending => return Poll::Pending, // TODO: flush?
+                    Poll::Pending => return Poll::Pending,
                 }
             }
 
@@ -123,7 +122,7 @@ where
                         return Poll::Ready(Ok(()));
                     }
                     Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
-                    Poll::Pending => return Poll::Pending, // TODO: top up input buffer for larger writes
+                    Poll::Pending => return Poll::Pending,
                 }
             }
 
@@ -136,7 +135,7 @@ where
 
 impl<S> AsyncWrite for StreamRecorder<S>
 where
-    S: AsyncWrite + Unpin, // TODO: remove unneeded?
+    S: AsyncWrite + Unpin,
 {
     fn poll_write(
         mut self: Pin<&mut Self>,

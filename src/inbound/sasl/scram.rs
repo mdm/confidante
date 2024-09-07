@@ -34,7 +34,7 @@ where
     H: ScramHashing,
 {
     fn new(plaintext: &str) -> Result<Self, Error> {
-        let iterations = NonZero::new(4096).expect("Iterations must be positive"); // TODO: drastically increase this
+        let iterations = NonZero::new(4096).expect("Iterations must be positive");
         let salt = SaltString::generate(&mut OsRng);
         dbg!(&salt);
         let stored_password = ScramPassword::salt_password_with_params::<&str, H>(
@@ -151,8 +151,8 @@ impl MechanismNegotiator for ScramSha1Negotiator {
                 MechanismNegotiatorResult::Failure(anyhow!(err.message.clone()).context(err))
             }
             ScramResultServer::Final(additional_data) => {
-                let username = self.server.get_auth_username().cloned(); // TODO: error out if username is not set at this point
-                let jid = Jid::new(username, self.resolved_domain.clone(), None);
+                let username = self.server.get_auth_username().cloned().unwrap();
+                let jid = Jid::new(Some(username), self.resolved_domain.clone(), None);
                 let additional_data = if additional_data.is_empty() {
                     None
                 } else {
@@ -166,7 +166,6 @@ impl MechanismNegotiator for ScramSha1Negotiator {
 
 #[derive(Debug, Clone)]
 struct ScramAuthHelper {
-    // TODO: split into two structs, for user lookup and channel binding
     resolved_domain: String,
     store: StoreHandle,
 }

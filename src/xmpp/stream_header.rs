@@ -2,7 +2,7 @@ use super::jid::Jid;
 use super::stream::StreamId;
 
 #[derive(Debug)]
-pub struct LanguageTag(pub String); // TODO: make inner field private
+pub struct LanguageTag(pub String);
 
 #[derive(Debug)]
 pub struct StreamHeader {
@@ -10,5 +10,4 @@ pub struct StreamHeader {
     pub to: Option<Jid>,
     pub id: Option<StreamId>,
     pub language: Option<LanguageTag>,
-    // TODO: add version
 }

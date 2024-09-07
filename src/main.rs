@@ -1,4 +1,4 @@
-mod inbound; // TODO: rename to inbound
+mod inbound;
 mod services;
 mod settings;
 mod types;
@@ -69,8 +69,6 @@ async fn main() -> Result<(), Error> {
             loop {
                 let (connection, _) = listener.accept().await?;
 
-                // TODO: handle shutdown
-
                 let router = router.clone();
                 let store = store.clone();
 
@@ -81,8 +79,6 @@ async fn main() -> Result<(), Error> {
 
                     let mut stream = InboundStream::new(connection, router, store);
                     stream.handle().await;
-
-                    // TODO: close connection (or does drop do that?)
                 });
             }
         }

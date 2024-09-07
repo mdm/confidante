@@ -29,7 +29,7 @@ impl StarttlsNegotiator {
             name: "starttls".to_string(),
             namespace: Some(namespaces::XMPP_STARTTLS.to_string()),
             attributes,
-            children: vec![], // TODO: handle required starttls
+            children: vec![],
         }
     }
 
