@@ -46,20 +46,20 @@ impl ResourceBindingNegotiator {
             bail!("expected IQ stanza");
         }
 
-        if element.get_attribute("type", None) != Some("set") {
+        if element.attribute("type", None) != Some("set") {
             bail!("IQ stanza is not of type set");
         };
 
-        let Some(request_id) = element.get_attribute("id", None) else {
+        let Some(request_id) = element.attribute("id", None) else {
             bail!("IQ stanza does not have an id");
         };
 
-        let Some(bind_request) = element.get_child("bind", Some(namespaces::XMPP_BIND)) else {
+        let Some(bind_request) = element.child("bind", Some(namespaces::XMPP_BIND)) else {
             bail!("IQ stanza does not contain a bind request");
         };
 
-        let resource = match bind_request.get_child("resource", Some(namespaces::XMPP_BIND)) {
-            Some(requested_resource) => requested_resource.get_text(),
+        let resource = match bind_request.child("resource", Some(namespaces::XMPP_BIND)) {
+            Some(requested_resource) => requested_resource.text(),
             None => uuid::Uuid::new_v4().to_string(),
         };
 

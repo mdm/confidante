@@ -22,13 +22,13 @@ pub struct Element {
 }
 
 impl Element {
-    pub fn get_attribute(&self, name: &str, namespace: Option<&str>) -> Option<&str> {
+    pub fn attribute(&self, name: &str, namespace: Option<&str>) -> Option<&str> {
         self.attributes
             .get(&(name.to_string(), namespace.map(|s| s.to_string())))
             .map(|s| s.as_str())
     }
 
-    pub fn get_child(&self, name: &str, namespace: Option<&str>) -> Option<&Element> {
+    pub fn child(&self, name: &str, namespace: Option<&str>) -> Option<&Element> {
         self.children.iter().find_map(|child| match child {
             Node::Element(element) => {
                 if element.name == name && element.namespace == namespace.map(|s| s.to_string()) {
@@ -41,11 +41,11 @@ impl Element {
         })
     }
 
-    pub fn get_text(&self) -> String {
+    pub fn text(&self) -> String {
         let mut text = String::new();
         for child in &self.children {
             match child {
-                Node::Element(element) => text.push_str(&element.get_text()),
+                Node::Element(element) => text.push_str(&element.text()),
                 Node::Text(s) => text.push_str(s),
                 Node::CData(s) => text.push_str(s),
                 _ => {}

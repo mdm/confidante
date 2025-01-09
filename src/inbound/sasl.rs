@@ -76,13 +76,13 @@ impl SaslNegotiator {
             bail!("expected auth element");
         }
 
-        let mechanism = match element.get_attribute("mechanism", None) {
+        let mechanism = match element.attribute("mechanism", None) {
             Some(mechanism) => Mechanism::try_from(mechanism).unwrap(),
             None => bail!("auth element is missing mechanism attribute"),
         };
 
         let mut negotiator = mechanism.negotiator(store)?;
-        let mut response_payload = BASE64_STANDARD.decode(element.get_text()).unwrap();
+        let mut response_payload = BASE64_STANDARD.decode(element.text()).unwrap();
 
         loop {
             let result = negotiator.process(response_payload).await;
@@ -152,7 +152,7 @@ impl SaslNegotiator {
 
             match response.name.as_str() {
                 "response" => {
-                    response_payload = BASE64_STANDARD.decode(response.get_text()).unwrap();
+                    response_payload = BASE64_STANDARD.decode(response.text()).unwrap();
                 }
                 "abort" => {
                     bail!("authentication aborted");
