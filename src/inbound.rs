@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use anyhow::{anyhow, bail, Error};
@@ -19,7 +18,7 @@ use crate::xmpp::stream_header::LanguageTag;
 use crate::xmpp::stream_header::StreamHeader;
 use crate::{
     settings::get_settings,
-    xml::{stream_parser::Frame, Element, Node},
+    xml::{stream_parser::Frame, Element},
 };
 
 use self::sasl::SaslNegotiator;
@@ -247,27 +246,18 @@ where
     }
 
     async fn advertise_features(&mut self) -> Result<(), Error> {
-        let features = self
-            .negotiable_features()
-            .into_iter()
-            .map(|feature| match feature {
-                StreamFeatures::Tls => Node::Element(StarttlsNegotiator::advertise_feature()),
-                StreamFeatures::Authentication => Node::Element(SaslNegotiator::advertise_feature(
+        let mut features = Element::new("features", Some(namespaces::XMPP_STREAMS));
+        for feature in self.negotiable_features() {
+            let feature = match feature {
+                StreamFeatures::Tls => StarttlsNegotiator::advertise_feature(),
+                StreamFeatures::Authentication => SaslNegotiator::advertise_feature(
                     self.stream.is_secure(),
                     self.stream.is_authenticated(),
-                )),
-                StreamFeatures::ResourceBinding => {
-                    Node::Element(ResourceBindingNegotiator::advertise_feature())
-                }
-            })
-            .collect();
-
-        let features = Element {
-            name: "features".to_string(),
-            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
-            attributes: HashMap::new(),
-            children: features,
-        };
+                ),
+                StreamFeatures::ResourceBinding => ResourceBindingNegotiator::advertise_feature(),
+            };
+            features.add_element(feature);
+        }
 
         self.stream.writer().write_xml_element(&features).await
     }
@@ -317,22 +307,18 @@ where
     async fn handle_unrecoverable_error(&mut self, error: Error) -> Result<(), Error> {
         dbg!(error);
 
-        let error = Element {
-            name: "error".to_string(),
-            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
-            attributes: HashMap::new(),
-            children: vec![Node::Element(Element {
-                name: "internal-server-error".to_string(),
-                namespace: Some(namespaces::XMPP_STREAM_ERRORS.to_string()),
-                attributes: vec![(
-                    ("xmlns".to_string(), None),
+        let mut error = Element::new("error", Some(namespaces::XMPP_STREAMS));
+        error.with_element(
+            "internal-server-error",
+            Some(namespaces::XMPP_STREAM_ERRORS),
+            |internal_server_error| {
+                internal_server_error.set_attribute(
+                    "xmlns",
+                    None,
                     namespaces::XMPP_STREAM_ERRORS.to_string(),
-                )]
-                .into_iter()
-                .collect(),
-                children: vec![],
-            })],
-        };
+                );
+            },
+        );
 
         self.stream.writer().write_xml_element(&error).await?;
         self.stream.writer().write_stream_close().await

@@ -1,9 +1,7 @@
-use std::{collections::HashMap, vec};
-
 use anyhow::{bail, Error};
 
 use crate::{
-    xml::{namespaces, Element, Node},
+    xml::{namespaces, Element},
     xmpp::{
         jid::Jid,
         stream::{Connection, XmppStream},
@@ -20,18 +18,10 @@ pub struct ResourceBindingNegotiator {
 
 impl ResourceBindingNegotiator {
     pub fn advertise_feature() -> Element {
-        let mut attributes = HashMap::new();
-        attributes.insert(
-            ("xmlns".to_string(), None),
-            namespaces::XMPP_BIND.to_string(),
-        );
+        let mut bind = Element::new("bind", Some(namespaces::XMPP_BIND));
+        bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
 
-        Element {
-            name: "bind".to_string(),
-            namespace: Some("urn:ietf:params:xml:ns:xmpp-bind".to_string()),
-            attributes,
-            children: vec![],
-        }
+        bind
     }
 
     pub async fn negotiate_feature<C>(
@@ -42,7 +32,7 @@ impl ResourceBindingNegotiator {
     where
         C: Connection,
     {
-        if element.name != "iq" && element.namespace.as_deref() != Some(namespaces::XMPP_CLIENT) {
+        if element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
             bail!("expected IQ stanza");
         }
 
@@ -69,32 +59,15 @@ impl ResourceBindingNegotiator {
 
         let bound_entity = entity.bind(resource);
 
-        let bind_response = Element {
-            name: "iq".to_string(),
-            namespace: None,
-            attributes: vec![
-                (("id".to_string(), None), request_id.to_string()),
-                (("type".to_string(), None), "result".to_string()),
-            ]
-            .into_iter()
-            .collect(),
-            children: vec![Node::Element(Element {
-                name: "bind".to_string(),
-                namespace: Some(namespaces::XMPP_BIND.to_string()),
-                attributes: vec![(
-                    ("xmlns".to_string(), None),
-                    namespaces::XMPP_BIND.to_string(),
-                )]
-                .into_iter()
-                .collect(),
-                children: vec![Node::Element(Element {
-                    name: "jid".to_string(),
-                    namespace: None,
-                    attributes: HashMap::new(),
-                    children: vec![Node::Text(format!("{}", bound_entity))],
-                })],
-            })],
-        };
+        let mut bind_response = Element::new("iq", None);
+        bind_response.set_attribute("id", None, request_id.to_string());
+        bind_response.set_attribute("type", None, "result".to_string());
+        bind_response.with_element("bind", Some(namespaces::XMPP_BIND), |bind| {
+            bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
+            bind.with_element("jid", None, |jid| {
+                jid.add_text(format!("{}", bound_entity));
+            });
+        });
 
         stream.writer().write_xml_element(&bind_response).await?;
 
