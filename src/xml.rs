@@ -104,3 +104,47 @@ impl Element {
             .push(Node::ProcessingInstruction(processing_instruction));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validate_simple() {
+        let element = Element::new("foo", Some("bar"));
+        assert!(element.validate("foo", Some("bar")));
+    }
+
+    #[test]
+    fn validate_different_name() {
+        let element = Element::new("foo", Some("bar"));
+        assert!(!element.validate("baz", Some("bar")));
+    }
+
+    #[test]
+    fn validate_different_namespace() {
+        let element = Element::new("foo", Some("bar"));
+        assert!(!element.validate("foo", Some("baz")));
+    }
+
+    #[test]
+    fn attribute_simple() {
+        let mut element = Element::new("foo", Some("bar"));
+        element.set_attribute("baz", None, "qux".to_string());
+        assert_eq!(element.attribute("baz", None), Some("qux"));
+    }
+
+    #[test]
+    fn attribute_missing() {
+        let element = Element::new("foo", Some("bar"));
+        assert_eq!(element.attribute("baz", None), None);
+    }
+
+    #[test]
+    fn attribute_overwrite() {
+        let mut element = Element::new("foo", Some("bar"));
+        element.set_attribute("baz", None, "qux".to_string());
+        element.set_attribute("baz", None, "overwritten".to_string());
+        assert_eq!(element.attribute("baz", None), Some("overwritten"));
+    }
+}
