@@ -50,7 +50,7 @@ impl From<RustyXmlElement> for Element {
 }
 
 #[pin_project]
-pub struct StreamParser<R: AsyncRead + Unpin> {
+pub struct RustyXmlStreamParser<R: AsyncRead + Unpin> {
     #[pin]
     reader: R,
     buffer: Box<[u8]>,
@@ -58,9 +58,7 @@ pub struct StreamParser<R: AsyncRead + Unpin> {
     element_builder: ElementBuilder,
 }
 
-impl<R: AsyncRead + Unpin> super::StreamParser for StreamParser<R> {
-    type Reader = R;
-
+impl<R: AsyncRead + Unpin> super::StreamParser<R> for RustyXmlStreamParser<R> {
     fn new(reader: R) -> Self {
         let buffer = vec![0; 4096].into_boxed_slice();
         let parser = Parser::new();
@@ -79,7 +77,7 @@ impl<R: AsyncRead + Unpin> super::StreamParser for StreamParser<R> {
     }
 }
 
-impl<R: AsyncRead + Unpin> Stream for StreamParser<R> {
+impl<R: AsyncRead + Unpin> Stream for RustyXmlStreamParser<R> {
     type Item = Result<Frame, Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Result<Frame, Error>>> {

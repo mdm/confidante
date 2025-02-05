@@ -14,6 +14,7 @@ use scram_rs::{ScramSha1Ring, ScramSha256Ring};
 use services::router::RouterHandle;
 use services::store::{SqliteStoreBackend, StoreHandle};
 use settings::Settings;
+use xml::stream_parser::rusty_xml::RustyXmlStreamParser;
 use xmpp::jid::Jid;
 
 use crate::inbound::InboundStream;
@@ -77,7 +78,8 @@ async fn main() -> Result<(), Error> {
                     let connection = DebugConnection::try_new(connection).await.unwrap();
                     println!("New connection: {}", connection.uuid());
 
-                    let mut stream = InboundStream::new(connection, router, store);
+                    let mut stream =
+                        InboundStream::<_, RustyXmlStreamParser<_>>::new(connection, router, store);
                     stream.handle().await;
                 });
             }

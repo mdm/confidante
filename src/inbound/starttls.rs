@@ -1,7 +1,8 @@
 use anyhow::{bail, Error};
+use tokio::io::ReadHalf;
 
 use crate::{
-    xml::{namespaces, Element},
+    xml::{namespaces, stream_parser::StreamParser, Element},
     xmpp::stream::{Connection, XmppStream},
 };
 
@@ -17,12 +18,13 @@ impl StarttlsNegotiator {
         starttls
     }
 
-    pub async fn negotiate_feature<C>(
-        stream: &mut XmppStream<C>,
+    pub async fn negotiate_feature<C, P>(
+        stream: &mut XmppStream<C, P>,
         element: &Element,
     ) -> Result<(), Error>
     where
         C: Connection,
+        P: StreamParser<ReadHalf<C>>,
     {
         if element.validate("starttls", Some(namespaces::XMPP_STARTTLS)) {
             bail!("expected starttls element");

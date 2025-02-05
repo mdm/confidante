@@ -1,7 +1,8 @@
 use anyhow::{bail, Error};
+use tokio::io::ReadHalf;
 
 use crate::{
-    xml::{namespaces, Element},
+    xml::{namespaces, stream_parser::StreamParser, Element},
     xmpp::{
         jid::Jid,
         stream::{Connection, XmppStream},
@@ -24,13 +25,14 @@ impl ResourceBindingNegotiator {
         bind
     }
 
-    pub async fn negotiate_feature<C>(
-        stream: &mut XmppStream<C>,
+    pub async fn negotiate_feature<C, P>(
+        stream: &mut XmppStream<C, P>,
         element: &Element,
         entity: &Option<Jid>,
     ) -> Result<Jid, Error>
     where
         C: Connection,
+        P: StreamParser<ReadHalf<C>>,
     {
         if element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
             bail!("expected IQ stanza");

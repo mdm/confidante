@@ -9,10 +9,7 @@ use tokio_rustls::rustls::ServerConfig;
 
 use crate::{
     settings::get_settings,
-    xml::{
-        stream_parser::{rusty_xml::StreamParser as ConcreteStreamParser, StreamParser},
-        stream_writer::StreamWriter,
-    },
+    xml::{stream_parser::StreamParser, stream_writer::StreamWriter},
 };
 
 #[derive(Debug, Clone)]
@@ -42,27 +39,29 @@ pub trait Connection: AsyncRead + AsyncWrite + Unpin + Sized {
     fn is_authenticated(&self) -> bool;
 }
 
-pub struct XmppStream<C>
+pub struct XmppStream<C, P>
 where
     C: Connection,
+    P: StreamParser<ReadHalf<C>>,
 {
     starttls_allowed: bool,
     secure: bool,
     authenticated: bool,
-    reader: Option<ConcreteStreamParser<ReadHalf<C>>>,
+    reader: Option<P>,
     writer: Option<StreamWriter<WriteHalf<C>>>,
 }
 
-impl<C> XmppStream<C>
+impl<C, P> XmppStream<C, P>
 where
     C: Connection,
+    P: StreamParser<ReadHalf<C>>,
 {
     pub fn new(connection: C) -> Self {
         let starttls_allowed = connection.is_starttls_allowed();
         let secure = connection.is_secure();
         let authenticated = connection.is_authenticated();
         let (reader, writer) = split(connection);
-        let reader = Some(ConcreteStreamParser::new(reader));
+        let reader = Some(P::new(reader));
         let writer = Some(StreamWriter::new(writer));
 
         Self {
@@ -77,7 +76,7 @@ where
     pub fn reset(&mut self) {
         let reader = self.reader.take().unwrap().into_inner();
         let writer = self.writer.take().unwrap().into_inner();
-        self.reader = Some(ConcreteStreamParser::new(reader));
+        self.reader = Some(P::new(reader));
         self.writer = Some(StreamWriter::new(writer));
     }
 
@@ -93,7 +92,7 @@ where
         self.authenticated
     }
 
-    pub fn reader(&mut self) -> &mut ConcreteStreamParser<ReadHalf<C>> {
+    pub fn reader(&mut self) -> &mut P {
         self.reader.as_mut().unwrap()
     }
 
@@ -115,7 +114,7 @@ where
         self.authenticated = connection.is_authenticated();
 
         let (reader, writer) = split(connection);
-        self.reader = Some(ConcreteStreamParser::new(reader));
+        self.reader = Some(P::new(reader));
         self.writer = Some(StreamWriter::new(writer));
 
         Ok(())

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use anyhow::{anyhow, bail, Error};
+use tokio::io::ReadHalf;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
@@ -9,6 +10,7 @@ use crate::services::router::ManagementCommand;
 use crate::services::router::RouterHandle;
 use crate::services::store::StoreHandle;
 use crate::xml::namespaces;
+use crate::xml::stream_parser::StreamParser;
 use crate::xmpp::jid::Jid;
 use crate::xmpp::stanza::Stanza;
 use crate::xmpp::stream::Connection;
@@ -70,11 +72,12 @@ impl Default for StreamInfo {
     }
 }
 
-pub struct InboundStream<C>
+pub struct InboundStream<C, P>
 where
     C: Connection,
+    P: StreamParser<ReadHalf<C>>,
 {
-    stream: XmppStream<C>,
+    stream: XmppStream<C, P>,
     info: StreamInfo,
     router: RouterHandle,
     stanza_tx: Sender<Stanza>,
@@ -82,9 +85,10 @@ where
     store: StoreHandle,
 }
 
-impl<C> InboundStream<C>
+impl<C, P> InboundStream<C, P>
 where
     C: Connection,
+    P: StreamParser<ReadHalf<C>>,
 {
     pub fn new(connection: C, router: RouterHandle, store: StoreHandle) -> Self {
         let stream = XmppStream::new(connection);

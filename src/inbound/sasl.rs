@@ -6,11 +6,16 @@ use std::{
 
 use anyhow::{bail, Error};
 use base64::prelude::*;
+use tokio::io::ReadHalf;
 use tokio_stream::StreamExt;
 
 use crate::{
     services::store::StoreHandle,
-    xml::{namespaces, stream_parser::Frame, Element},
+    xml::{
+        namespaces,
+        stream_parser::{Frame, StreamParser},
+        Element,
+    },
     xmpp::{
         jid::Jid,
         stream::{Connection, XmppStream},
@@ -58,13 +63,14 @@ impl SaslNegotiator {
         mechanisms
     }
 
-    pub async fn negotiate_feature<C>(
-        stream: &mut XmppStream<C>,
+    pub async fn negotiate_feature<C, P>(
+        stream: &mut XmppStream<C, P>,
         element: &Element,
         store: StoreHandle,
     ) -> Result<Jid, Error>
     where
         C: Connection,
+        P: StreamParser<ReadHalf<C>>,
     {
         if element.validate("auth", Some(namespaces::XMPP_SASL)) {
             bail!("expected auth element");

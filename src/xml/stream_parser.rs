@@ -14,9 +14,7 @@ pub enum Frame {
     XmlFragment(Element),
 }
 
-pub trait StreamParser: Stream<Item = Result<Frame, Error>> + Unpin {
-    type Reader: AsyncRead + Unpin;
-
-    fn new(reader: Self::Reader) -> Self;
-    fn into_inner(self) -> Self::Reader;
+pub trait StreamParser<R: AsyncRead + Unpin>: Stream<Item = Result<Frame, Error>> + Unpin {
+    fn new(reader: R) -> Self;
+    fn into_inner(self) -> R;
 }
