@@ -42,15 +42,15 @@ impl SaslNegotiator {
 
         let mut no_mechanisms = true;
         if Self::mechanism_available(&Mechanism::External, secure, authenticated) {
-            mechanisms.add_element(Mechanism::External.to_element());
+            mechanisms.add_child(Mechanism::External.to_element());
             no_mechanisms = false;
         }
         if Self::mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
-            mechanisms.add_element(Mechanism::ScramSha1.to_element());
+            mechanisms.add_child(Mechanism::ScramSha1.to_element());
             no_mechanisms = false;
         }
         if Self::mechanism_available(&Mechanism::Plain, secure, authenticated) {
-            mechanisms.add_element(Mechanism::Plain.to_element());
+            mechanisms.add_child(Mechanism::Plain.to_element());
             no_mechanisms = false;
         }
 
@@ -109,7 +109,7 @@ impl SaslNegotiator {
                 MechanismNegotiatorResult::Failure(_err) => {
                     let mut xml = Element::new("failure", Some(namespaces::XMPP_SASL));
                     xml.set_attribute("xmlns", None, namespaces::XMPP_SASL.to_string());
-                    xml.add_element(Element::new("not-authorized", Some(namespaces::XMPP_SASL)));
+                    xml.add_child(Element::new("not-authorized", Some(namespaces::XMPP_SASL)));
 
                     stream.writer().write_xml_element(&xml).await?;
                 }

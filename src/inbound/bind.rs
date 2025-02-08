@@ -46,11 +46,11 @@ impl ResourceBindingNegotiator {
             bail!("IQ stanza does not have an id");
         };
 
-        let Some(bind_request) = element.child("bind", Some(namespaces::XMPP_BIND)) else {
+        let Some(bind_request) = element.find_child("bind", Some(namespaces::XMPP_BIND)) else {
             bail!("IQ stanza does not contain a bind request");
         };
 
-        let resource = match bind_request.child("resource", Some(namespaces::XMPP_BIND)) {
+        let resource = match bind_request.find_child("resource", Some(namespaces::XMPP_BIND)) {
             Some(requested_resource) => requested_resource.text(),
             None => uuid::Uuid::new_v4().to_string(),
         };
@@ -64,9 +64,9 @@ impl ResourceBindingNegotiator {
         let mut bind_response = Element::new("iq", None);
         bind_response.set_attribute("id", None, request_id.to_string());
         bind_response.set_attribute("type", None, "result".to_string());
-        bind_response.with_element("bind", Some(namespaces::XMPP_BIND), |bind| {
+        bind_response.with_child("bind", Some(namespaces::XMPP_BIND), |bind| {
             bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
-            bind.with_element("jid", None, |jid| {
+            bind.with_child("jid", None, |jid| {
                 jid.add_text(format!("{}", bound_entity));
             });
         });

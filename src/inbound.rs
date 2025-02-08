@@ -260,7 +260,7 @@ where
                 ),
                 StreamFeatures::ResourceBinding => ResourceBindingNegotiator::advertise_feature(),
             };
-            features.add_element(feature);
+            features.add_child(feature);
         }
 
         self.stream.writer().write_xml_element(&features).await
@@ -312,7 +312,7 @@ where
         dbg!(error);
 
         let mut error = Element::new("error", Some(namespaces::XMPP_STREAMS));
-        error.with_element(
+        error.with_child(
             "internal-server-error",
             Some(namespaces::XMPP_STREAM_ERRORS),
             |internal_server_error| {

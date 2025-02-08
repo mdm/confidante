@@ -48,7 +48,7 @@ impl Element {
         );
     }
 
-    pub fn child(&self, name: &str, namespace: Option<&str>) -> Option<&Element> {
+    pub fn find_child(&self, name: &str, namespace: Option<&str>) -> Option<&Element> {
         self.children.iter().find_map(|child| match child {
             Node::Element(element) => {
                 if element.name == name && element.namespace == namespace.map(|s| s.to_string()) {
@@ -74,11 +74,11 @@ impl Element {
         text
     }
 
-    pub fn add_element(&mut self, element: Element) {
+    pub fn add_child(&mut self, element: Element) {
         self.children.push(Node::Element(element));
     }
 
-    pub fn with_element<F>(&mut self, name: &str, namespace: Option<&str>, f: F)
+    pub fn with_child<F>(&mut self, name: &str, namespace: Option<&str>, f: F)
     where
         F: FnOnce(&mut Element),
     {
@@ -89,19 +89,6 @@ impl Element {
 
     pub fn add_text(&mut self, text: String) {
         self.children.push(Node::Text(text));
-    }
-
-    pub fn add_cdata(&mut self, cdata: String) {
-        self.children.push(Node::CData(cdata));
-    }
-
-    pub fn add_comment(&mut self, comment: String) {
-        self.children.push(Node::Comment(comment));
-    }
-
-    pub fn add_processing_instruction(&mut self, processing_instruction: String) {
-        self.children
-            .push(Node::ProcessingInstruction(processing_instruction));
     }
 }
 
@@ -146,5 +133,70 @@ mod tests {
         element.set_attribute("baz", None, "qux".to_string());
         element.set_attribute("baz", None, "overwritten".to_string());
         assert_eq!(element.attribute("baz", None), Some("overwritten"));
+    }
+
+    #[test]
+    fn child_single() {
+        let mut parent = Element::new("foo", Some("bar"));
+        let child = Element::new("baz", Some("qux"));
+        parent.add_child(child);
+        assert!(parent.find_child("baz", Some("qux")).is_some());
+        assert!(parent
+            .find_child("baz", Some("qux"))
+            .unwrap()
+            .validate("baz", Some("qux")));
+    }
+
+    #[test]
+    fn child_multiple() {
+        let mut parent = Element::new("foo", Some("bar"));
+        let child = Element::new("baz", Some("baz"));
+        parent.add_child(child);
+        let child = Element::new("qux", Some("qux"));
+        parent.add_child(child);
+        assert!(parent.find_child("qux", Some("qux")).is_some());
+        assert!(parent
+            .find_child("qux", Some("qux"))
+            .unwrap()
+            .validate("qux", Some("qux")));
+    }
+
+    #[test]
+    fn child_missing() {
+        let parent = Element::new("foo", Some("bar"));
+        assert!(parent.find_child("baz", Some("qux")).is_none());
+    }
+
+    #[test]
+    fn child_helper() {
+        let mut parent = Element::new("foo", Some("bar"));
+        parent.with_child("baz", Some("qux"), |child| {
+            child.set_attribute("quux", None, "corge".to_string());
+        });
+        assert!(parent.find_child("baz", Some("qux")).is_some());
+        assert_eq!(
+            parent
+                .find_child("baz", Some("qux"))
+                .unwrap()
+                .attribute("quux", None),
+            Some("corge")
+        );
+    }
+
+    #[test]
+    fn text_simple() {
+        let mut element = Element::new("foo", Some("bar"));
+        element.add_text("baz".to_string());
+        assert_eq!(element.text(), "baz");
+    }
+
+    fn text_nested() {
+        let mut parent = Element::new("foo", Some("bar"));
+        parent.add_text("before".to_string());
+        parent.with_child("baz", Some("qux"), |child| {
+            child.add_text("inside".to_string());
+        });
+        parent.add_text("after".to_string());
+        assert_eq!(parent.text(), "beforeinsideafter");
     }
 }
