@@ -1,8 +1,8 @@
+use std::future::Future;
 use std::sync::Arc;
 
 use anyhow::Error;
 use base64::prelude::*;
-use futures::Future;
 use rand::{RngCore, SeedableRng};
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
 use tokio_rustls::rustls::ServerConfig;

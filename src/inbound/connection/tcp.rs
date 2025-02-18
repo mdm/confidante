@@ -1,7 +1,7 @@
+use std::future::Future;
 use std::{pin::Pin, sync::Arc, task::ready};
 
 use anyhow::{anyhow, Error};
-use futures::Future;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,

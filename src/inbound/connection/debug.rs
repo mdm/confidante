@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::{
     pin::Pin,
     sync::Arc,
@@ -5,7 +6,6 @@ use std::{
 };
 
 use anyhow::Error;
-use futures::Future;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
