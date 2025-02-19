@@ -1,4 +1,4 @@
-use std::future::Future;
+use std::future::{self, Future};
 use std::sync::Arc;
 
 use anyhow::Error;
@@ -118,5 +118,122 @@ where
         self.writer = Some(StreamWriter::new(writer));
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{settings::Settings, xml::stream_parser::rusty_xml::RustyXmlStreamParser};
+
+    use super::*;
+
+    #[derive(Default)]
+    struct DummyConnection {
+        starttls_allowed: bool,
+        secure: bool,
+        authenticated: bool,
+    }
+
+    impl AsyncRead for DummyConnection {
+        fn poll_read(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _buf: &mut tokio::io::ReadBuf<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    impl AsyncWrite for DummyConnection {
+        fn poll_write(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+            _buf: &[u8],
+        ) -> std::task::Poll<std::io::Result<usize>> {
+            std::task::Poll::Ready(Ok(0))
+        }
+
+        fn poll_flush(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+
+        fn poll_shutdown(
+            self: std::pin::Pin<&mut Self>,
+            _cx: &mut std::task::Context<'_>,
+        ) -> std::task::Poll<std::io::Result<()>> {
+            std::task::Poll::Ready(Ok(()))
+        }
+    }
+
+    impl Connection for DummyConnection {
+        type Upgrade = future::Ready<Result<Self, Error>>;
+
+        fn upgrade(mut self, _: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
+            self.secure = true;
+            Ok(std::future::ready(Ok(self)))
+        }
+
+        fn is_starttls_allowed(&self) -> bool {
+            self.starttls_allowed
+        }
+
+        fn is_secure(&self) -> bool {
+            self.secure
+        }
+
+        fn is_authenticated(&self) -> bool {
+            self.authenticated
+        }
+    }
+
+    #[tokio::test]
+    async fn upgrade_works() {
+        let mut stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        assert!(!stream.is_secure());
+        stream.upgrade_to_tls().await.unwrap();
+        assert!(stream.is_secure());
+    }
+
+    #[test]
+    fn reader_is_available_after_new() {
+        let stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        assert!(stream.reader.is_some());
+    }
+
+    #[test]
+    fn writer_is_available_after_new() {
+        let stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        assert!(stream.writer.is_some());
+    }
+
+    #[test]
+    fn reader_is_available_after_reset() {
+        let mut stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        stream.reset();
+        assert!(stream.reader.is_some());
+    }
+
+    #[test]
+    fn writer_is_available_after_reset() {
+        let mut stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        stream.reset();
+        assert!(stream.writer.is_some());
+    }
+
+    #[tokio::test]
+    async fn reader_is_available_after_upgrade() {
+        let mut stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        stream.upgrade_to_tls().await.unwrap();
+        assert!(stream.reader.is_some());
+    }
+
+    #[tokio::test]
+    async fn writer_is_available_after_upgrade() {
+        let mut stream = XmppStream::<_, RustyXmlStreamParser<_>>::new(DummyConnection::default());
+        stream.upgrade_to_tls().await.unwrap();
+        assert!(stream.writer.is_some());
     }
 }
