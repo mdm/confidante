@@ -1,13 +1,11 @@
 use std::future::Future;
 use std::{
     pin::Pin,
-    sync::Arc,
     task::{ready, Poll},
 };
 
 use anyhow::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio_rustls::rustls::ServerConfig;
 use uuid::Uuid;
 
 use crate::utils::recorder::StreamRecorder;
@@ -44,8 +42,8 @@ where
 {
     type Upgrade = DebugConnectionUpgrade<C>;
 
-    fn upgrade(self, config: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
-        let upgrade = self.recorder.into_inner().upgrade(config)?;
+    fn upgrade(self) -> Result<Self::Upgrade, Error> {
+        let upgrade = self.recorder.into_inner().upgrade()?;
         Ok(DebugConnectionUpgrade::new(Box::pin(upgrade), self.uuid))
     }
 

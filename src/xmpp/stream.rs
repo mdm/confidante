@@ -1,16 +1,11 @@
-use std::future::{self, Future};
-use std::sync::Arc;
+use std::future::Future;
 
 use anyhow::Error;
 use base64::prelude::*;
 use rand::{RngCore, SeedableRng};
 use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
-use tokio_rustls::rustls::ServerConfig;
 
-use crate::{
-    settings::get_settings,
-    xml::{stream_parser::StreamParser, stream_writer::StreamWriter},
-};
+use crate::xml::{stream_parser::StreamParser, stream_writer::StreamWriter};
 
 #[derive(Debug, Clone)]
 pub struct StreamId(String);
@@ -33,7 +28,7 @@ impl StreamId {
 pub trait Connection: AsyncRead + AsyncWrite + Unpin + Sized {
     type Upgrade: Future<Output = Result<Self, Error>> + Send + 'static;
 
-    fn upgrade(self, config: Arc<ServerConfig>) -> Result<Self::Upgrade, Error>;
+    fn upgrade(self) -> Result<Self::Upgrade, Error>;
     fn is_starttls_allowed(&self) -> bool;
     fn is_secure(&self) -> bool;
     fn is_authenticated(&self) -> bool;
@@ -105,9 +100,7 @@ where
         let writer = self.writer.take().unwrap().into_inner();
         let connection = reader.unsplit(writer);
 
-        let connection = connection
-            .upgrade(get_settings().tls.server_config.clone())?
-            .await?;
+        let connection = connection.upgrade()?.await?;
 
         self.starttls_allowed = connection.is_starttls_allowed();
         self.secure = connection.is_secure();
@@ -123,7 +116,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{settings::Settings, xml::stream_parser::rusty_xml::RustyXmlStreamParser};
+    use crate::xml::stream_parser::rusty_xml::RustyXmlStreamParser;
 
     use super::*;
 
@@ -169,9 +162,9 @@ mod tests {
     }
 
     impl Connection for DummyConnection {
-        type Upgrade = future::Ready<Result<Self, Error>>;
+        type Upgrade = std::future::Ready<Result<Self, Error>>;
 
-        fn upgrade(mut self, _: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
+        fn upgrade(mut self) -> Result<Self::Upgrade, Error> {
             self.secure = true;
             Ok(std::future::ready(Ok(self)))
         }

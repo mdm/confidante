@@ -9,8 +9,10 @@ use tokio_stream::StreamExt;
 use crate::services::router::ManagementCommand;
 use crate::services::router::RouterHandle;
 use crate::services::store::StoreHandle;
+use crate::settings::{Settings, TlsSettings};
 use crate::xml::namespaces;
 use crate::xml::stream_parser::StreamParser;
+use crate::xml::{stream_parser::Frame, Element};
 use crate::xmpp::jid::Jid;
 use crate::xmpp::stanza::Stanza;
 use crate::xmpp::stream::Connection;
@@ -18,10 +20,6 @@ use crate::xmpp::stream::StreamId;
 use crate::xmpp::stream::XmppStream;
 use crate::xmpp::stream_header::LanguageTag;
 use crate::xmpp::stream_header::StreamHeader;
-use crate::{
-    settings::get_settings,
-    xml::{stream_parser::Frame, Element},
-};
 
 use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
@@ -83,6 +81,7 @@ where
     stanza_tx: Sender<Stanza>,
     stanza_rx: Receiver<Stanza>,
     store: StoreHandle,
+    settings: Settings,
 }
 
 impl<C, P> InboundStream<C, P>
@@ -90,7 +89,12 @@ where
     C: Connection,
     P: StreamParser<ReadHalf<C>>,
 {
-    pub fn new(connection: C, router: RouterHandle, store: StoreHandle) -> Self {
+    pub fn new(
+        connection: C,
+        router: RouterHandle,
+        store: StoreHandle,
+        settings: Settings,
+    ) -> Self {
         let stream = XmppStream::new(connection);
         let info = StreamInfo::default();
         let (stanza_tx, stanza_rx) = mpsc::channel(STANZA_CHANNEL_BUFFER_SIZE);
@@ -102,6 +106,7 @@ where
             stanza_tx,
             stanza_rx,
             store,
+            settings,
         }
     }
 
@@ -160,8 +165,8 @@ where
         }
 
         let tls_required = match self.info.connection_type {
-            Some(ConnectionType::Client) => get_settings().tls.required_for_clients,
-            Some(ConnectionType::Server) => get_settings().tls.required_for_servers,
+            Some(ConnectionType::Client) => self.settings.tls.required_for_clients,
+            Some(ConnectionType::Server) => self.settings.tls.required_for_servers,
             None => false,
         };
         if (!tls_required || self.info.features.contains(&StreamFeatures::Tls))
@@ -296,7 +301,7 @@ where
 
     async fn send_stream_header(&mut self, to: Option<Jid>) -> Result<(), Error> {
         let outbound_header = StreamHeader {
-            from: Some(get_settings().domain.clone()),
+            from: Some(self.settings.domain.clone()),
             to,
             id: Some(self.info.stream_id.clone()),
             language: None,

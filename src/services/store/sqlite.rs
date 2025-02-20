@@ -2,7 +2,7 @@ use anyhow::Error;
 use sqlx::{migrate, sqlite::SqlitePoolOptions, Pool, Sqlite};
 
 use crate::inbound::StoredPasswordKind;
-use crate::settings::get_settings;
+use crate::settings::Settings;
 use crate::xmpp::jid::Jid;
 
 use super::StoreBackend;
@@ -12,10 +12,10 @@ pub struct SqliteStoreBackend {
 }
 
 impl SqliteStoreBackend {
-    pub async fn new() -> Result<Self, Error> {
+    pub async fn new(settings: &Settings) -> Result<Self, Error> {
         let pool = SqlitePoolOptions::new()
             .max_connections(5)
-            .connect(&get_settings().database_url)
+            .connect(&settings.database_url)
             .await?;
 
         Ok(Self { pool })

@@ -35,9 +35,9 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    Settings::init()?;
+    let settings = Settings::init()?;
 
-    let store_backend = SqliteStoreBackend::new().await?;
+    let store_backend = SqliteStoreBackend::new(&settings).await?;
     let store = StoreHandle::new(store_backend);
 
     let cli = Cli::parse();
@@ -70,16 +70,19 @@ async fn main() -> Result<(), Error> {
             loop {
                 let (connection, _) = listener.accept().await?;
 
+                let settings = settings.clone();
                 let router = router.clone();
                 let store = store.clone();
 
                 tokio::spawn(async move {
-                    let connection = TcpConnection::new(connection, true);
+                    let connection =
+                        TcpConnection::new(connection, settings.tls.server_config.clone(), true);
                     let connection = DebugConnection::try_new(connection).await.unwrap();
                     println!("New connection: {}", connection.uuid());
 
-                    let mut stream =
-                        InboundStream::<_, RustyXmlStreamParser<_>>::new(connection, router, store);
+                    let mut stream = InboundStream::<_, RustyXmlStreamParser<_>>::new(
+                        connection, router, store, settings,
+                    );
                     stream.handle().await;
                 });
             }
