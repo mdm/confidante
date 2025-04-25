@@ -13,7 +13,6 @@ base64 = "0.22.1"
 bytes = "1.7.2"
 config = { version = "0.14.0", features = ["yaml"] }
 digest = "0.10.7"
-futures = "0.3.30"
 pin-project = "1.1.5"
 quick-xml = "0.36.2"
 rand = "0.8.5"

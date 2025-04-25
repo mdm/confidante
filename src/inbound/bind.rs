@@ -1,9 +1,8 @@
-use std::{collections::HashMap, vec};
-
 use anyhow::{bail, Error};
+use tokio::io::ReadHalf;
 
 use crate::{
-    xml::{namespaces, Element, Node},
+    xml::{namespaces, stream_parser::StreamParser, Element},
     xmpp::{
         jid::Jid,
         stream::{Connection, XmppStream},
@@ -20,46 +19,39 @@ pub struct ResourceBindingNegotiator {
 
 impl ResourceBindingNegotiator {
     pub fn advertise_feature() -> Element {
-        let mut attributes = HashMap::new();
-        attributes.insert(
-            ("xmlns".to_string(), None),
-            namespaces::XMPP_BIND.to_string(),
-        );
+        let mut bind = Element::new("bind", Some(namespaces::XMPP_BIND));
+        bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
 
-        Element {
-            name: "bind".to_string(),
-            namespace: Some("urn:ietf:params:xml:ns:xmpp-bind".to_string()),
-            attributes,
-            children: vec![],
-        }
+        bind
     }
 
-    pub async fn negotiate_feature<C>(
-        stream: &mut XmppStream<C>,
+    pub async fn negotiate_feature<C, P>(
+        stream: &mut XmppStream<C, P>,
         element: &Element,
         entity: &Option<Jid>,
     ) -> Result<Jid, Error>
     where
         C: Connection,
+        P: StreamParser<ReadHalf<C>>,
     {
-        if element.name != "iq" && element.namespace.as_deref() != Some(namespaces::XMPP_CLIENT) {
+        if element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
             bail!("expected IQ stanza");
         }
 
-        if element.get_attribute("type", None) != Some("set") {
+        if element.attribute("type", None) != Some("set") {
             bail!("IQ stanza is not of type set");
         };
 
-        let Some(request_id) = element.get_attribute("id", None) else {
+        let Some(request_id) = element.attribute("id", None) else {
             bail!("IQ stanza does not have an id");
         };
 
-        let Some(bind_request) = element.get_child("bind", Some(namespaces::XMPP_BIND)) else {
+        let Some(bind_request) = element.find_child("bind", Some(namespaces::XMPP_BIND)) else {
             bail!("IQ stanza does not contain a bind request");
         };
 
-        let resource = match bind_request.get_child("resource", Some(namespaces::XMPP_BIND)) {
-            Some(requested_resource) => requested_resource.get_text(),
+        let resource = match bind_request.find_child("resource", Some(namespaces::XMPP_BIND)) {
+            Some(requested_resource) => requested_resource.text(),
             None => uuid::Uuid::new_v4().to_string(),
         };
 
@@ -69,32 +61,15 @@ impl ResourceBindingNegotiator {
 
         let bound_entity = entity.bind(resource);
 
-        let bind_response = Element {
-            name: "iq".to_string(),
-            namespace: None,
-            attributes: vec![
-                (("id".to_string(), None), request_id.to_string()),
-                (("type".to_string(), None), "result".to_string()),
-            ]
-            .into_iter()
-            .collect(),
-            children: vec![Node::Element(Element {
-                name: "bind".to_string(),
-                namespace: Some(namespaces::XMPP_BIND.to_string()),
-                attributes: vec![(
-                    ("xmlns".to_string(), None),
-                    namespaces::XMPP_BIND.to_string(),
-                )]
-                .into_iter()
-                .collect(),
-                children: vec![Node::Element(Element {
-                    name: "jid".to_string(),
-                    namespace: None,
-                    attributes: HashMap::new(),
-                    children: vec![Node::Text(format!("{}", bound_entity))],
-                })],
-            })],
-        };
+        let mut bind_response = Element::new("iq", None);
+        bind_response.set_attribute("id", None, request_id.to_string());
+        bind_response.set_attribute("type", None, "result".to_string());
+        bind_response.with_child("bind", Some(namespaces::XMPP_BIND), |bind| {
+            bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
+            bind.with_child("jid", None, |jid| {
+                jid.add_text(format!("{}", bound_entity));
+            });
+        });
 
         stream.writer().write_xml_element(&bind_response).await?;
 

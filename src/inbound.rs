@@ -1,7 +1,7 @@
-use std::collections::HashMap;
 use std::collections::HashSet;
 
 use anyhow::{anyhow, bail, Error};
+use tokio::io::ReadHalf;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
@@ -9,7 +9,10 @@ use tokio_stream::StreamExt;
 use crate::services::router::ManagementCommand;
 use crate::services::router::RouterHandle;
 use crate::services::store::StoreHandle;
+use crate::settings::{Settings, TlsSettings};
 use crate::xml::namespaces;
+use crate::xml::stream_parser::StreamParser;
+use crate::xml::{stream_parser::Frame, Element};
 use crate::xmpp::jid::Jid;
 use crate::xmpp::stanza::Stanza;
 use crate::xmpp::stream::Connection;
@@ -17,10 +20,6 @@ use crate::xmpp::stream::StreamId;
 use crate::xmpp::stream::XmppStream;
 use crate::xmpp::stream_header::LanguageTag;
 use crate::xmpp::stream_header::StreamHeader;
-use crate::{
-    settings::get_settings,
-    xml::{stream_parser::Frame, Element, Node},
-};
 
 use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
@@ -71,23 +70,31 @@ impl Default for StreamInfo {
     }
 }
 
-pub struct InboundStream<C>
+pub struct InboundStream<C, P>
 where
     C: Connection,
+    P: StreamParser<ReadHalf<C>>,
 {
-    stream: XmppStream<C>,
+    stream: XmppStream<C, P>,
     info: StreamInfo,
     router: RouterHandle,
     stanza_tx: Sender<Stanza>,
     stanza_rx: Receiver<Stanza>,
     store: StoreHandle,
+    settings: Settings,
 }
 
-impl<C> InboundStream<C>
+impl<C, P> InboundStream<C, P>
 where
     C: Connection,
+    P: StreamParser<ReadHalf<C>>,
 {
-    pub fn new(connection: C, router: RouterHandle, store: StoreHandle) -> Self {
+    pub fn new(
+        connection: C,
+        router: RouterHandle,
+        store: StoreHandle,
+        settings: Settings,
+    ) -> Self {
         let stream = XmppStream::new(connection);
         let info = StreamInfo::default();
         let (stanza_tx, stanza_rx) = mpsc::channel(STANZA_CHANNEL_BUFFER_SIZE);
@@ -99,6 +106,7 @@ where
             stanza_tx,
             stanza_rx,
             store,
+            settings,
         }
     }
 
@@ -157,8 +165,8 @@ where
         }
 
         let tls_required = match self.info.connection_type {
-            Some(ConnectionType::Client) => get_settings().tls.required_for_clients,
-            Some(ConnectionType::Server) => get_settings().tls.required_for_servers,
+            Some(ConnectionType::Client) => self.settings.tls.required_for_clients,
+            Some(ConnectionType::Server) => self.settings.tls.required_for_servers,
             None => false,
         };
         if (!tls_required || self.info.features.contains(&StreamFeatures::Tls))
@@ -247,27 +255,18 @@ where
     }
 
     async fn advertise_features(&mut self) -> Result<(), Error> {
-        let features = self
-            .negotiable_features()
-            .into_iter()
-            .map(|feature| match feature {
-                StreamFeatures::Tls => Node::Element(StarttlsNegotiator::advertise_feature()),
-                StreamFeatures::Authentication => Node::Element(SaslNegotiator::advertise_feature(
+        let mut features = Element::new("features", Some(namespaces::XMPP_STREAMS));
+        for feature in self.negotiable_features() {
+            let feature = match feature {
+                StreamFeatures::Tls => StarttlsNegotiator::advertise_feature(),
+                StreamFeatures::Authentication => SaslNegotiator::advertise_feature(
                     self.stream.is_secure(),
                     self.stream.is_authenticated(),
-                )),
-                StreamFeatures::ResourceBinding => {
-                    Node::Element(ResourceBindingNegotiator::advertise_feature())
-                }
-            })
-            .collect();
-
-        let features = Element {
-            name: "features".to_string(),
-            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
-            attributes: HashMap::new(),
-            children: features,
-        };
+                ),
+                StreamFeatures::ResourceBinding => ResourceBindingNegotiator::advertise_feature(),
+            };
+            features.add_child(feature);
+        }
 
         self.stream.writer().write_xml_element(&features).await
     }
@@ -302,7 +301,7 @@ where
 
     async fn send_stream_header(&mut self, to: Option<Jid>) -> Result<(), Error> {
         let outbound_header = StreamHeader {
-            from: Some(get_settings().domain.clone()),
+            from: Some(self.settings.domain.clone()),
             to,
             id: Some(self.info.stream_id.clone()),
             language: None,
@@ -317,22 +316,18 @@ where
     async fn handle_unrecoverable_error(&mut self, error: Error) -> Result<(), Error> {
         dbg!(error);
 
-        let error = Element {
-            name: "error".to_string(),
-            namespace: Some(namespaces::XMPP_STREAMS.to_string()),
-            attributes: HashMap::new(),
-            children: vec![Node::Element(Element {
-                name: "internal-server-error".to_string(),
-                namespace: Some(namespaces::XMPP_STREAM_ERRORS.to_string()),
-                attributes: vec![(
-                    ("xmlns".to_string(), None),
+        let mut error = Element::new("error", Some(namespaces::XMPP_STREAMS));
+        error.with_child(
+            "internal-server-error",
+            Some(namespaces::XMPP_STREAM_ERRORS),
+            |internal_server_error| {
+                internal_server_error.set_attribute(
+                    "xmlns",
+                    None,
                     namespaces::XMPP_STREAM_ERRORS.to_string(),
-                )]
-                .into_iter()
-                .collect(),
-                children: vec![],
-            })],
-        };
+                );
+            },
+        );
 
         self.stream.writer().write_xml_element(&error).await?;
         self.stream.writer().write_stream_close().await

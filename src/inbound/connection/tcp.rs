@@ -1,7 +1,7 @@
+use std::future::Future;
 use std::{pin::Pin, sync::Arc, task::ready};
 
 use anyhow::{anyhow, Error};
-use futures::Future;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
@@ -17,15 +17,17 @@ enum Socket {
 
 pub struct TcpConnection {
     socket: Socket,
+    tls_server_config: Option<Arc<ServerConfig>>,
     starttls_allowed: bool,
 }
 
 impl TcpConnection {
-    pub fn new(socket: TcpStream, starttls_allowed: bool) -> Self {
+    pub fn new(socket: TcpStream, tls_config: Arc<ServerConfig>, starttls_allowed: bool) -> Self {
         let socket = Socket::Plain(socket);
 
         TcpConnection {
             socket,
+            tls_server_config: Some(tls_config),
             starttls_allowed,
         }
     }
@@ -34,10 +36,13 @@ impl TcpConnection {
 impl Connection for TcpConnection {
     type Upgrade = TcpConnectionUpgrade;
 
-    fn upgrade(self, config: Arc<ServerConfig>) -> Result<Self::Upgrade, Error> {
+    fn upgrade(self) -> Result<Self::Upgrade, Error> {
         match self.socket {
             Socket::Plain(socket) => {
-                let accept = TlsAcceptor::from(config).accept(socket);
+                let tls_config = self
+                    .tls_server_config
+                    .ok_or_else(|| anyhow!("TLS config not set"))?;
+                let accept = TlsAcceptor::from(tls_config).accept(socket);
 
                 Ok(TcpConnectionUpgrade { accept })
             }
@@ -121,6 +126,7 @@ impl Future for TcpConnectionUpgrade {
         let tls_stream = ready!(Pin::new(&mut self.accept).poll(cx))?;
         let connection = TcpConnection {
             socket: Socket::Tls(tls_stream),
+            tls_server_config: None,
             starttls_allowed: false,
         };
         std::task::Poll::Ready(Ok(connection))

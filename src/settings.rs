@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::{fs::File, io::BufReader};
 
 use anyhow::{anyhow, Error};
@@ -12,8 +12,6 @@ use tokio_rustls::rustls::{RootCertStore, ServerConfig};
 
 use crate::xmpp::jid::Jid;
 
-static SETTINGS: OnceLock<Settings> = OnceLock::new();
-
 #[derive(Debug, Deserialize)]
 
 struct TlsConfig {
@@ -23,39 +21,33 @@ struct TlsConfig {
     private_key: PrivateKeyDer<'static>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct Tls {
+#[derive(Debug, Clone, Deserialize)]
+pub struct TlsSettings {
     pub required_for_clients: bool,
     pub required_for_servers: bool,
     #[serde(deserialize_with = "init_tls_server_config")]
     pub server_config: Arc<ServerConfig>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
     pub database_url: String,
     pub domain: Jid,
-    pub tls: Tls,
+    pub tls: TlsSettings,
 }
 
 impl Settings {
-    pub fn init() -> Result<(), Error> {
+    pub fn init() -> Result<Self, Error> {
         let settings = config::Config::builder()
             .add_source(config::File::with_name("config/defaults"))
             .add_source(config::File::with_name("config/overrides"))
             .add_source(config::Environment::with_prefix("CONFIDANTE").separator("__"))
             .build()?;
 
-        let settings = settings.try_deserialize()?;
-        match SETTINGS.set(settings) {
-            Ok(_) => Ok(()),
-            Err(_) => Err(anyhow!("Settings already initialized")),
-        }
-    }
-}
+        let settings = settings.try_deserialize().map_err(|e| anyhow!(e))?;
 
-pub fn get_settings() -> &'static Settings {
-    SETTINGS.get().expect("Settings not initialized")
+        Ok(settings)
+    }
 }
 
 fn load_certificate_chain<'d, D: Deserializer<'d>>(
