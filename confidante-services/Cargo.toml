@@ -1,0 +1,8 @@
+[package]
+name = "confidante-services"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+confidante-core = { path = "../confidante-core" }
+tokio = { version = "1.40.0", features = ["full"] }

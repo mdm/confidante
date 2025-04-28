@@ -1,7 +1,7 @@
 use std::pin::Pin;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use pin_project::pin_project;
 use rustyxml::{Element as RustyXmlElement, ElementBuilder, Event, Parser};
 use tokio::io::{AsyncRead, ReadBuf};

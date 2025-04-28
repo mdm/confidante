@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use tokio::{select, sync::mpsc};
 
-use crate::xmpp::{jid::Jid, stanza::Stanza};
+use confidante_core::xmpp::{jid::Jid, stanza::Stanza};
 
 #[derive(Debug)]
 pub enum ManagementCommand {

@@ -1,9 +1,10 @@
 use anyhow::Error;
-use sqlx::{migrate, sqlite::SqlitePoolOptions, Pool, Sqlite};
+use sqlx::{Pool, Sqlite, migrate, sqlite::SqlitePoolOptions};
 
-use crate::inbound::StoredPasswordKind;
+use confidante_core::xmpp::jid::Jid;
+
 use crate::settings::Settings;
-use crate::xmpp::jid::Jid;
+use crate::store::StoredPasswordKind;
 
 use super::StoreBackend;
 

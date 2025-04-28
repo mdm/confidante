@@ -4,19 +4,17 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{Error, anyhow, bail};
 use base64::prelude::*;
-use password_hash::{rand_core::OsRng, SaltString};
+use password_hash::{SaltString, rand_core::OsRng};
 use scram_rs::{
-    async_trait, scram_async::AsyncScramServer, AsyncScramAuthServer, AsyncScramCbHelper,
-    ScramCommon, ScramHashing, ScramKey, ScramNonce, ScramPassword, ScramResult, ScramResultServer,
-    ScramSha1Ring, SCRAM_TYPES,
+    AsyncScramAuthServer, AsyncScramCbHelper, SCRAM_TYPES, ScramCommon, ScramHashing, ScramKey,
+    ScramNonce, ScramPassword, ScramResult, ScramResultServer, ScramSha1Ring, async_trait,
+    scram_async::AsyncScramServer,
 };
 
-use crate::{
-    services::store::{self, StoreHandle},
-    xmpp::jid::Jid,
-};
+use confidante_backend::store::{self, StoreHandle};
+use confidante_core::xmpp::jid::Jid;
 
 use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordKind};
 
@@ -138,7 +136,7 @@ impl MechanismNegotiator for ScramSha1Negotiator {
             Err(_) => {
                 return MechanismNegotiatorResult::Failure(anyhow!(
                     "Could not parse payload as UTF-8"
-                ))
+                ));
             }
         };
         let step_result = self.server.parse_response(payload).await;

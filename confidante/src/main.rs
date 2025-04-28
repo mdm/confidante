@@ -1,23 +1,16 @@
-mod inbound;
-mod services;
-mod settings;
-mod types;
-mod utils;
-mod xml;
-mod xmpp;
-
 use clap::{Parser, Subcommand};
-use inbound::connection::debug::DebugConnection;
-use inbound::connection::tcp::TcpConnection;
-use inbound::{StoredPassword, StoredPasswordArgon2, StoredPasswordScram};
 use scram_rs::{ScramSha1Ring, ScramSha256Ring};
-use services::router::RouterHandle;
-use services::store::{SqliteStoreBackend, StoreHandle};
-use settings::Settings;
-use xml::stream_parser::rusty_xml::RustyXmlStreamParser;
-use xmpp::jid::Jid;
 
-use crate::inbound::InboundStream;
+use confidante_backend::settings::Settings;
+use confidante_backend::store::{SqliteStoreBackend, StoreHandle};
+use confidante_core::xml::stream_parser::rusty_xml::RustyXmlStreamParser;
+use confidante_core::xmpp::jid::Jid;
+use confidante_inbound::connection::debug::DebugConnection;
+use confidante_inbound::connection::tcp::TcpConnection;
+use confidante_inbound::{
+    InboundStream, StoredPassword, StoredPasswordArgon2, StoredPasswordScram,
+};
+use confidante_services::router::RouterHandle;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 

@@ -1,8 +1,8 @@
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use tokio::io::ReadHalf;
 
-use crate::{
-    xml::{namespaces, stream_parser::StreamParser, Element},
+use confidante_core::{
+    xml::{Element, namespaces, stream_parser::StreamParser},
     xmpp::stream::{Connection, XmppStream},
 };
 

@@ -1,0 +1,15 @@
+[package]
+name = "confidante"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+confidante-backend = { path = "../confidante-backend" }
+confidante-core = { path = "../confidante-core" }
+confidante-inbound = { path = "../confidante-inbound" }
+confidante-services = { path = "../confidante-services" }
+clap = { version = "4.5.18", features = ["derive"] }
+scram-rs = { version = "0.13.2", features = [
+  "use_ring",
+] } # move dependency to confidante-backend
+tokio = { version = "1.40.0", features = ["full"] }

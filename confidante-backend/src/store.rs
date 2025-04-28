@@ -6,13 +6,19 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 
-use crate::inbound::StoredPasswordKind;
-use crate::xmpp::jid::Jid;
+use confidante_core::xmpp::jid::Jid;
 
 pub use self::sqlite::SqliteStoreBackend;
 
 mod fake;
 mod sqlite;
+
+#[derive(Debug)]
+pub enum StoredPasswordKind {
+    Argon2,
+    ScramSha1,
+    ScramSha256,
+}
 
 enum Query {
     GetStoredPassword {
@@ -266,8 +272,10 @@ mod test {
             .unwrap()
             .parse::<StoredPasswordArgon2>()
             .unwrap();
-        assert!(Argon2::default()
-            .verify_password("password".as_bytes(), &stored_assword.hash.password_hash())
-            .is_ok());
+        assert!(
+            Argon2::default()
+                .verify_password("password".as_bytes(), &stored_assword.hash.password_hash())
+                .is_ok()
+        );
     }
 }

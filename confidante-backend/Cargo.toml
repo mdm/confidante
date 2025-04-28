@@ -1,0 +1,16 @@
+[package]
+name = "confidante-backend"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+confidante-core = { path = "../confidante-core" }
+anyhow = "1.0.89"
+argon2 = { version = "0.5.3", features = ["std"] }                   # test only dependency
+config = { version = "0.14.0", features = ["yaml"] }
+rustls-native-certs = "0.8.0"
+rustls-pemfile = "2.2.0"
+serde = { version = "1.0.210", features = ["derive"] }
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite"] }
+tokio = { version = "1.40.0", features = ["full"] }
+tokio-rustls = "0.26.0"

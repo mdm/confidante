@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{fs::File, io::BufReader};
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use rustls_native_certs::load_native_certs;
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use serde::{Deserialize, Deserializer};
@@ -10,7 +10,7 @@ use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio_rustls::rustls::server::WebPkiClientVerifier;
 use tokio_rustls::rustls::{RootCertStore, ServerConfig};
 
-use crate::xmpp::jid::Jid;
+use confidante_core::xmpp::jid::Jid;
 
 #[derive(Debug, Deserialize)]
 

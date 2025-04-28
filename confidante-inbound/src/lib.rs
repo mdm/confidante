@@ -1,33 +1,33 @@
 use std::collections::HashSet;
 
-use anyhow::{anyhow, bail, Error};
+use anyhow::{Error, anyhow, bail};
 use tokio::io::ReadHalf;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 
-use crate::services::router::ManagementCommand;
-use crate::services::router::RouterHandle;
-use crate::services::store::StoreHandle;
-use crate::settings::{Settings, TlsSettings};
-use crate::xml::namespaces;
-use crate::xml::stream_parser::StreamParser;
-use crate::xml::{stream_parser::Frame, Element};
-use crate::xmpp::jid::Jid;
-use crate::xmpp::stanza::Stanza;
-use crate::xmpp::stream::Connection;
-use crate::xmpp::stream::StreamId;
-use crate::xmpp::stream::XmppStream;
-use crate::xmpp::stream_header::LanguageTag;
-use crate::xmpp::stream_header::StreamHeader;
+use confidante_backend::settings::{Settings, TlsSettings};
+use confidante_backend::store::StoreHandle;
+use confidante_core::xml::namespaces;
+use confidante_core::xml::stream_parser::StreamParser;
+use confidante_core::xml::{Element, stream_parser::Frame};
+use confidante_core::xmpp::jid::Jid;
+use confidante_core::xmpp::stanza::Stanza;
+use confidante_core::xmpp::stream::Connection;
+use confidante_core::xmpp::stream::StreamId;
+use confidante_core::xmpp::stream::XmppStream;
+use confidante_core::xmpp::stream_header::LanguageTag;
+use confidante_core::xmpp::stream_header::StreamHeader;
+use confidante_services::router::ManagementCommand;
+use confidante_services::router::RouterHandle;
 
 use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
 use starttls::StarttlsNegotiator;
 
+pub use self::sasl::StoredPassword;
 pub use self::sasl::StoredPasswordArgon2;
 pub use self::sasl::StoredPasswordScram;
-pub use self::sasl::{StoredPassword, StoredPasswordKind};
 
 mod bind;
 pub mod connection;

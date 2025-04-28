@@ -1,14 +1,14 @@
 use std::future::Future;
 use std::{pin::Pin, sync::Arc, task::ready};
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpStream,
 };
-use tokio_rustls::{rustls::ServerConfig, server::TlsStream, Accept, TlsAcceptor};
+use tokio_rustls::{Accept, TlsAcceptor, rustls::ServerConfig, server::TlsStream};
 
-use crate::xmpp::stream::Connection;
+use confidante_core::xmpp::stream::Connection;
 
 enum Socket {
     Plain(TcpStream),

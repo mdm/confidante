@@ -4,17 +4,17 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use base64::prelude::*;
 use tokio::io::ReadHalf;
 use tokio_stream::StreamExt;
 
-use crate::{
-    services::store::StoreHandle,
+use confidante_backend::store::StoreHandle;
+use confidante_backend::store::StoredPasswordKind;
+use confidante_core::{
     xml::{
-        namespaces,
+        Element, namespaces,
         stream_parser::{Frame, StreamParser},
-        Element,
     },
     xmpp::{
         jid::Jid,
@@ -192,13 +192,6 @@ impl Display for Mechanism {
 
 pub trait StoredPassword: FromStr + Display {
     fn new(plaintext: &str) -> Result<Self, Error>;
-}
-
-#[derive(Debug)]
-pub enum StoredPasswordKind {
-    Argon2,
-    ScramSha1,
-    ScramSha256,
 }
 
 enum MechanismNegotiatorResult {

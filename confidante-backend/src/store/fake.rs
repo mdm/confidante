@@ -1,7 +1,8 @@
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 
-use crate::inbound::StoredPasswordKind;
-use crate::xmpp::jid::Jid;
+use confidante_core::xmpp::jid::Jid;
+
+use crate::store::StoredPasswordKind;
 
 use super::StoreBackend;
 

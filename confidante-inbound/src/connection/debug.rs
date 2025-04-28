@@ -1,15 +1,15 @@
 use std::future::Future;
 use std::{
     pin::Pin,
-    task::{ready, Poll},
+    task::{Poll, ready},
 };
 
 use anyhow::Error;
 use tokio::io::{AsyncRead, AsyncWrite};
 use uuid::Uuid;
 
-use crate::utils::recorder::StreamRecorder;
-use crate::xmpp::stream::Connection;
+use confidante_core::utils::recorder::StreamRecorder;
+use confidante_core::xmpp::stream::Connection;
 
 pub struct DebugConnection<C>
 where
