@@ -1,6 +1,6 @@
 use std::{
     pin::Pin,
-    task::{ready, Poll},
+    task::{Poll, ready},
 };
 
 use bytes::BufMut;
@@ -36,12 +36,12 @@ impl<S> StreamRecorder<S> {
         let input_recording = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&format!("log/{uuid}.in.xml"))
+            .open(&format!("{uuid}.in.xml"))
             .await?;
         let output_recording = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&format!("log/{uuid}.out.xml"))
+            .open(&format!("{uuid}.out.xml"))
             .await?;
 
         Ok(Self {
@@ -176,8 +176,10 @@ where
         let me = &mut *self;
 
         if me.output_bytes_recorded < me.output_bytes_written {
-            let num_bytes_written = ready!(Pin::new(&mut me.output_recording)
-                .poll_write(cx, &me.output_buffer[me.output_bytes_recorded..]))?;
+            let num_bytes_written = ready!(
+                Pin::new(&mut me.output_recording)
+                    .poll_write(cx, &me.output_buffer[me.output_bytes_recorded..])
+            )?;
             me.output_bytes_recorded += num_bytes_written;
             cx.waker().wake_by_ref();
             Poll::Pending
@@ -236,10 +238,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt, duplex};
     use uuid::Uuid;
 
-    use super::{StreamRecorder, BUFFER_SIZE};
+    use super::{BUFFER_SIZE, StreamRecorder};
 
     #[tokio::test]
     async fn read_bytes_are_recorded() {
@@ -274,16 +276,18 @@ mod tests {
         write.await.unwrap();
         read.await.unwrap();
 
-        let recording = format!("log/{uuid}.in.xml");
+        let recording = format!("{uuid}.in.xml");
         let recorded_data = std::fs::read(&recording).unwrap();
         std::fs::remove_file(&recording).unwrap();
-        std::fs::remove_file(format!("log/{uuid}.out.xml")).unwrap();
+        std::fs::remove_file(format!("{uuid}.out.xml")).unwrap();
 
         assert_eq!(recorded_data.len(), original_data.len());
-        assert!(recorded_data
-            .iter()
-            .zip(original_data.iter())
-            .all(|(a, b)| a == b));
+        assert!(
+            recorded_data
+                .iter()
+                .zip(original_data.iter())
+                .all(|(a, b)| a == b)
+        );
     }
 
     async fn written_bytes_are_recorded(
@@ -321,16 +325,18 @@ mod tests {
         write.await.unwrap();
         read.await.unwrap();
 
-        let recording = format!("log/{uuid}.out.xml");
+        let recording = format!("{uuid}.out.xml");
         let recorded_data = std::fs::read(&recording).unwrap();
         std::fs::remove_file(&recording).unwrap();
-        std::fs::remove_file(format!("log/{uuid}.in.xml")).unwrap();
+        std::fs::remove_file(format!("{uuid}.in.xml")).unwrap();
 
         assert_eq!(recorded_data.len(), original_data.len());
-        assert!(recorded_data
-            .iter()
-            .zip(original_data.iter())
-            .all(|(a, b)| a == b));
+        assert!(
+            recorded_data
+                .iter()
+                .zip(original_data.iter())
+                .all(|(a, b)| a == b)
+        );
     }
 
     #[tokio::test]

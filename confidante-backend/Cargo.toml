@@ -6,7 +6,6 @@ edition = "2024"
 [dependencies]
 confidante-core = { path = "../confidante-core" }
 anyhow = "1.0.98"
-argon2 = { version = "0.5.3", features = ["std"] }                   # test only dependency
 config = { version = "0.15.11", features = ["yaml"] }
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.2.0"

@@ -248,34 +248,22 @@ trait StoreBackend {
 mod test {
     use std::default::Default;
 
-    use argon2::{Argon2, PasswordVerifier};
-
-    use crate::inbound::StoredPassword;
-    use crate::inbound::StoredPasswordArgon2;
-
     use self::fake::FakeStoreBackend;
 
     use super::*;
 
     #[tokio::test]
     async fn test_store_query() {
+        let stored_password_argon2 = "super secret password";
         let mut store = StoreHandle::new(FakeStoreBackend {
-            stored_password_argon2: Some(
-                StoredPasswordArgon2::new("password").unwrap().to_string(),
-            ),
+            stored_password_argon2: Some(stored_password_argon2.to_string()),
             ..Default::default()
         });
         let jid = "user@localhost/resource".parse::<Jid>().unwrap();
-        let stored_assword = store
+        let retrieved_password = store
             .get_stored_password(jid, StoredPasswordKind::Argon2)
             .await
-            .unwrap()
-            .parse::<StoredPasswordArgon2>()
             .unwrap();
-        assert!(
-            Argon2::default()
-                .verify_password("password".as_bytes(), &stored_assword.hash.password_hash())
-                .is_ok()
-        );
+        assert_eq!(stored_password_argon2, retrieved_password);
     }
 }
