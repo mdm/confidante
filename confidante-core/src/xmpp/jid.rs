@@ -5,7 +5,6 @@ use std::{
 
 use anyhow::{bail, Error};
 use regex::Regex;
-use serde_with::DeserializeFromStr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct DomainPart(String);
@@ -34,7 +33,7 @@ impl Display for ResourcePart {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, DeserializeFromStr)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Jid {
     local: Option<LocalPart>,
     domain: DomainPart,

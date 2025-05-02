@@ -12,7 +12,6 @@ rand = "0.9.1"
 rand_chacha = "0.9.0"
 regex = "1.11.1"
 rustyxml = { package = "RustyXML", version = "0.3.0" }
-serde_with = "3.12.0"                                  # get rid of this dependency. this should be an implementation detail of the settings.
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-stream = "0.1.17"
 uuid = { version = "1.16.0", features = ["v4"] }

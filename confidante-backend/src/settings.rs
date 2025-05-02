@@ -32,6 +32,7 @@ pub struct TlsSettings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct Settings {
     pub database_url: String,
+    #[serde(deserialize_with = "deserialize_jid")]
     pub domain: Jid,
     pub tls: TlsSettings,
 }
@@ -94,4 +95,13 @@ fn init_tls_server_config<'d, D: Deserializer<'d>>(
         .map_err(serde::de::Error::custom)?;
 
     Ok(Arc::new(config))
+}
+
+fn deserialize_jid<'d, D: Deserializer<'d>>(
+    deserializer: D,
+) -> Result<Jid, D::Error> {
+    let raw_jid = String::deserialize(deserializer)?;
+    raw_jid
+        .parse::<Jid>()
+        .map_err(serde::de::Error::custom)
 }
