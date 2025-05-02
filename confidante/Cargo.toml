@@ -8,5 +8,6 @@ confidante-backend = { path = "../confidante-backend" }
 confidante-core = { path = "../confidante-core" }
 confidante-inbound = { path = "../confidante-inbound" }
 confidante-services = { path = "../confidante-services" }
+anyhow = "1.0.98"
 clap = { version = "4.5.37", features = ["derive"] }
 tokio = { version = "1.44.2", features = ["full"] }

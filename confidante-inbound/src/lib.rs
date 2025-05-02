@@ -1,12 +1,12 @@
 use std::collections::HashSet;
 
 use anyhow::{Error, anyhow, bail};
+use sasl::StoredPasswordLookup;
 use tokio::io::ReadHalf;
 use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 
-use confidante_backend::store::StoreHandle;
 use confidante_core::xml::namespaces;
 use confidante_core::xml::stream_parser::StreamParser;
 use confidante_core::xml::{Element, stream_parser::Frame};
@@ -72,29 +72,31 @@ pub struct InboundStreamSettings {
     pub tls_required: bool,
 }
 
-pub struct InboundStream<C, P>
+pub struct InboundStream<C, P, S>
 where
     C: Connection,
     P: StreamParser<ReadHalf<C>>,
+    S: StoredPasswordLookup + Send + Sync,
 {
     stream: XmppStream<C, P>,
     info: StreamInfo,
     router: RouterHandle,
     stanza_tx: Sender<Stanza>,
     stanza_rx: Receiver<Stanza>,
-    store: StoreHandle,
+    store: S,
     settings: InboundStreamSettings,
 }
 
-impl<C, P> InboundStream<C, P>
+impl<C, P, S> InboundStream<C, P, S>
 where
     C: Connection,
     P: StreamParser<ReadHalf<C>>,
+    S: StoredPasswordLookup + Send + Sync,
 {
     pub fn new(
         connection: C,
         router: RouterHandle,
-        store: StoreHandle,
+        store: S,
         settings: InboundStreamSettings,
     ) -> Self {
         let stream = XmppStream::new(connection);

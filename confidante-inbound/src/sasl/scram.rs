@@ -8,15 +8,14 @@ use anyhow::{Error, anyhow, bail};
 use base64::prelude::*;
 use password_hash::{SaltString, rand_core::OsRng};
 use scram_rs::{
-    AsyncScramAuthServer, AsyncScramCbHelper, SCRAM_TYPES, ScramCommon, ScramHashing, ScramKey,
-    ScramNonce, ScramPassword, ScramResult, ScramResultServer, ScramSha1Ring, ScramSha256Ring, async_trait,
+    AsyncScramAuthServer, AsyncScramCbHelper, SCRAM_TYPES, ScramHashing, ScramKey, ScramNonce,
+    ScramPassword, ScramResult, ScramResultServer, ScramSha1Ring, ScramSha256Ring, async_trait,
     scram_async::AsyncScramServer,
 };
 
-use confidante_backend::store::{self, StoreHandle};
 use confidante_core::xmpp::jid::Jid;
 
-use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordKind};
+use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordLookup};
 
 #[derive(Debug)]
 struct StoredPasswordScram<H>
@@ -160,13 +159,19 @@ impl Display for StoredPasswordScramSha256 {
     }
 }
 
-pub struct ScramSha1Negotiator {
+pub struct ScramSha1Negotiator<S>
+where
+    S: StoredPasswordLookup + Send + Sync,
+{
     resolved_domain: String,
-    server: AsyncScramServer<ScramSha1Ring, ScramAuthHelper, ScramAuthHelper>,
+    server: AsyncScramServer<ScramSha1Ring, ScramAuthHelper<S>, ScramAuthHelper<S>>,
 }
 
-impl MechanismNegotiator for ScramSha1Negotiator {
-    fn new(resolved_domain: String, store: StoreHandle) -> Result<Self, Error> {
+impl<S> MechanismNegotiator<S> for ScramSha1Negotiator<S>
+where
+    S: StoredPasswordLookup + Send + Sync,
+{
+    fn new(resolved_domain: String, store: S) -> Result<Self, Error> {
         let helper = ScramAuthHelper {
             resolved_domain: resolved_domain.clone(),
             store,
@@ -215,16 +220,22 @@ impl MechanismNegotiator for ScramSha1Negotiator {
 }
 
 #[derive(Debug, Clone)]
-struct ScramAuthHelper {
+struct ScramAuthHelper<S>
+where
+    S: StoredPasswordLookup + Sync + Send,
+{
     resolved_domain: String,
-    store: StoreHandle,
+    store: S,
 }
 
 #[async_trait]
-impl AsyncScramCbHelper for ScramAuthHelper {}
+impl<S> AsyncScramCbHelper for ScramAuthHelper<S> where S: StoredPasswordLookup + Sync + Send {}
 
 #[async_trait]
-impl AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper {
+impl<S> AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper<S>
+where
+    S: StoredPasswordLookup + Sync + Send,
+{
     async fn get_password_for_user(&self, username: &str) -> ScramResult<ScramPassword> {
         let jid = Jid::new(
             Some(username.to_string()),
@@ -232,10 +243,7 @@ impl AsyncScramAuthServer<ScramSha1Ring> for ScramAuthHelper {
             None,
         );
         dbg!(&jid);
-        let stored_password = self
-            .store
-            .get_stored_password(jid, StoredPasswordKind::ScramSha1)
-            .await;
+        let stored_password = self.store.get_stored_password_scram_sha1(jid).await;
         dbg!(&stored_password);
 
         let stored_password = stored_password

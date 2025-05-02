@@ -361,6 +361,7 @@ dependencies = [
 name = "confidante"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "clap",
  "confidante-backend",
  "confidante-core",
@@ -408,7 +409,6 @@ dependencies = [
  "anyhow",
  "argon2",
  "base64 0.22.1",
- "confidante-backend",
  "confidante-core",
  "confidante-services",
  "password-hash",

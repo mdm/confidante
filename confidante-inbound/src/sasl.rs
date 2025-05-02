@@ -9,8 +9,6 @@ use base64::prelude::*;
 use tokio::io::ReadHalf;
 use tokio_stream::StreamExt;
 
-use confidante_backend::store::StoreHandle;
-use confidante_backend::store::StoredPasswordKind;
 use confidante_core::{
     xml::{
         Element, namespaces,
@@ -28,6 +26,26 @@ pub use self::scram::StoredPasswordScramSha256;
 
 mod plain;
 mod scram;
+
+pub trait StoredPassword: FromStr + Display {
+    fn new(plaintext: &str) -> Result<Self, Error>;
+}
+
+pub trait StoredPasswordLookup: Clone + Debug {
+    // TODO: get rid of Clone bound
+    fn get_stored_password_argon2(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, Error>> + Send;
+    fn get_stored_password_scram_sha1(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, Error>> + Send;
+    fn get_stored_password_scram_sha256(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, Error>> + Send;
+}
 
 #[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug)]
@@ -64,14 +82,15 @@ impl SaslNegotiator {
         mechanisms
     }
 
-    pub async fn negotiate_feature<C, P>(
+    pub async fn negotiate_feature<C, P, S>(
         stream: &mut XmppStream<C, P>,
         element: &Element,
-        store: StoreHandle,
+        store: S,
     ) -> Result<Jid, Error>
     where
         C: Connection,
         P: StreamParser<ReadHalf<C>>,
+        S: StoredPasswordLookup + Send + Sync,
     {
         if element.validate("auth", Some(namespaces::XMPP_SASL)) {
             bail!("expected auth element");
@@ -159,7 +178,10 @@ impl Mechanism {
         element
     }
 
-    fn negotiator(&self, store: StoreHandle) -> Result<impl MechanismNegotiator, Error> {
+    fn negotiator<S>(&self, store: S) -> Result<impl MechanismNegotiator<S>, Error>
+    where
+        S: StoredPasswordLookup + Send + Sync,
+    {
         match self {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
@@ -191,18 +213,17 @@ impl Display for Mechanism {
     }
 }
 
-pub trait StoredPassword: FromStr + Display {
-    fn new(plaintext: &str) -> Result<Self, Error>;
-}
-
 enum MechanismNegotiatorResult {
     Challenge(Vec<u8>),
     Success(Jid, Option<Vec<u8>>),
     Failure(Error),
 }
 
-trait MechanismNegotiator {
-    fn new(resolved_domain: String, store: StoreHandle) -> Result<Self, Error>
+trait MechanismNegotiator<S>
+where
+    S: StoredPasswordLookup + Send + Sync,
+{
+    fn new(resolved_domain: String, store: S) -> Result<Self, Error>
     where
         Self: Sized;
     fn process(

@@ -1,11 +1,12 @@
 use clap::{Parser, Subcommand};
 
 use confidante_backend::settings::Settings;
-use confidante_backend::store::{SqliteStoreBackend, StoreHandle};
+use confidante_backend::store::{SqliteStoreBackend, StoreHandle, StoredPasswordKind};
 use confidante_core::xml::stream_parser::rusty_xml::RustyXmlStreamParser;
 use confidante_core::xmpp::jid::Jid;
 use confidante_inbound::connection::debug::DebugConnection;
 use confidante_inbound::connection::tcp::TcpConnection;
+use confidante_inbound::sasl::StoredPasswordLookup;
 use confidante_inbound::{ConnectionType, InboundStreamSettings};
 use confidante_inbound::{
     InboundStream,
@@ -27,6 +28,37 @@ struct Cli {
 enum Commands {
     AddUser { bare_jid: String, password: String },
     RemoveUser { bare_jid: String },
+}
+
+#[derive(Debug, Clone)]
+struct PasswordLookupAdapter {
+    store: StoreHandle,
+}
+
+impl StoredPasswordLookup for PasswordLookupAdapter {
+    fn get_stored_password_argon2(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send {
+        self.store
+            .get_stored_password(jid, StoredPasswordKind::Argon2)
+    }
+
+    fn get_stored_password_scram_sha1(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send {
+        self.store
+            .get_stored_password(jid, StoredPasswordKind::ScramSha1)
+    }
+
+    fn get_stored_password_scram_sha256(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send {
+        self.store
+            .get_stored_password(jid, StoredPasswordKind::ScramSha256)
+    }
 }
 
 #[tokio::main]
@@ -67,7 +99,9 @@ async fn main() -> Result<(), Error> {
 
                 let settings = settings.clone();
                 let router = router.clone();
-                let store = store.clone();
+                let store = PasswordLookupAdapter {
+                    store: store.clone(),
+                };
 
                 tokio::spawn(async move {
                     let connection =
@@ -80,7 +114,7 @@ async fn main() -> Result<(), Error> {
                         domain: settings.domain.clone(),
                         tls_required: settings.tls.required_for_clients,
                     };
-                    let mut stream = InboundStream::<_, RustyXmlStreamParser<_>>::new(
+                    let mut stream = InboundStream::<_, RustyXmlStreamParser<_>, _>::new(
                         connection, router, store, settings,
                     );
                     stream.handle().await;

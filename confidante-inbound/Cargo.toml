@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-confidante-backend = { path = "../confidante-backend" }    # get rid of this coupling
 confidante-core = { path = "../confidante-core" }
 confidante-services = { path = "../confidante-services" }  # invert dependency on router
 anyhow = "1.0.98"                                          # get rid of this dependency. it makes reuse hard
