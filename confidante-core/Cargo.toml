@@ -4,15 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.98"
 base64 = "0.22.1"
-bytes = "1.7.2"
-pin-project = "1.1.5"
+bytes = "1.10.1"
+pin-project = "1.1.10"
 rand = "0.8.5"
 rand_chacha = "0.3.1"
-regex = "1.11.0"
+regex = "1.11.1"
 rustyxml = { package = "RustyXML", version = "0.3.0" }
-serde_with = "3.9.0"                                   # get rid of this dependency. this should be an implementation detail of the settings.
-tokio = { version = "1.40.0", features = ["full"] }
-tokio-stream = "0.1.16"
-uuid = { version = "1.10.0", features = ["v4"] }
+serde_with = "3.12.0"                                  # get rid of this dependency. this should be an implementation detail of the settings.
+tokio = { version = "1.44.2", features = ["full"] }
+tokio-stream = "0.1.17"
+uuid = { version = "1.16.0", features = ["v4"] }

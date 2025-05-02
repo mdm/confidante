@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 confidante-core = { path = "../confidante-core" }
-tokio = { version = "1.40.0", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }

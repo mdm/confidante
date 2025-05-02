@@ -5,12 +5,12 @@ edition = "2024"
 
 [dependencies]
 confidante-core = { path = "../confidante-core" }
-anyhow = "1.0.89"
+anyhow = "1.0.98"
 argon2 = { version = "0.5.3", features = ["std"] }                   # test only dependency
-config = { version = "0.14.0", features = ["yaml"] }
-rustls-native-certs = "0.8.0"
+config = { version = "0.14.1", features = ["yaml"] }
+rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.2.0"
-serde = { version = "1.0.210", features = ["derive"] }
-sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite"] }
-tokio = { version = "1.40.0", features = ["full"] }
-tokio-rustls = "0.26.0"
+serde = { version = "1.0.219", features = ["derive"] }
+sqlx = { version = "0.8.5", features = ["runtime-tokio", "sqlite"] }
+tokio = { version = "1.44.2", features = ["full"] }
+tokio-rustls = "0.26.2"
