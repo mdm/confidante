@@ -412,7 +412,6 @@ dependencies = [
  "confidante-core",
  "confidante-inbound",
  "confidante-services",
- "scram-rs",
  "tokio",
 ]
 

@@ -23,16 +23,17 @@ use confidante_core::{
 };
 
 pub use self::plain::StoredPasswordArgon2;
-pub use self::scram::StoredPasswordScram;
+pub use self::scram::StoredPasswordScramSha1;
+pub use self::scram::StoredPasswordScramSha256;
 
 mod plain;
 mod scram;
 
 #[allow(clippy::manual_non_exhaustive)]
 #[derive(Debug)]
-pub struct AuthenticatedEntity(pub String, ());
+pub(super) struct AuthenticatedEntity(pub String, ());
 
-pub struct SaslNegotiator {
+pub(super) struct SaslNegotiator {
     _private: (),
 }
 
@@ -139,7 +140,7 @@ impl SaslNegotiator {
 }
 
 #[derive(thiserror::Error, Debug)]
-pub enum SaslError {
+pub(super) enum SaslError {
     #[error("the SASL mechanism `{0}` is not supported")]
     UnsupportedMechanism(String),
 }

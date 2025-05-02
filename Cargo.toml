@@ -1,3 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["confidante", "confidante-backend", "confidante-core", "confidante-inbound", "confidante-outbound", "confidante-services"]
+members = [
+  "confidante",
+  "confidante-backend",
+  "confidante-core",
+  "confidante-inbound",
+  "confidante-outbound",
+  "confidante-services",
+]

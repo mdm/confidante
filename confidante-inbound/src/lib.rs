@@ -25,13 +25,10 @@ use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
 use starttls::StarttlsNegotiator;
 
-pub use self::sasl::StoredPassword;
-pub use self::sasl::StoredPasswordArgon2;
-pub use self::sasl::StoredPasswordScram;
 
-mod bind;
 pub mod connection;
-mod sasl;
+pub mod sasl;
+mod bind;
 mod starttls;
 
 const STANZA_CHANNEL_BUFFER_SIZE: usize = 8;

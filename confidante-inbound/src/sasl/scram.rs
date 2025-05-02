@@ -9,7 +9,7 @@ use base64::prelude::*;
 use password_hash::{SaltString, rand_core::OsRng};
 use scram_rs::{
     AsyncScramAuthServer, AsyncScramCbHelper, SCRAM_TYPES, ScramCommon, ScramHashing, ScramKey,
-    ScramNonce, ScramPassword, ScramResult, ScramResultServer, ScramSha1Ring, async_trait,
+    ScramNonce, ScramPassword, ScramResult, ScramResultServer, ScramSha1Ring, ScramSha256Ring, async_trait,
     scram_async::AsyncScramServer,
 };
 
@@ -19,7 +19,7 @@ use confidante_core::xmpp::jid::Jid;
 use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordKind};
 
 #[derive(Debug)]
-pub struct StoredPasswordScram<H>
+struct StoredPasswordScram<H>
 where
     H: ScramHashing,
 {
@@ -105,6 +105,58 @@ where
             "$SCRAM-SHA-1${}${}${}${}${}",
             iterations, salt_base64, salted_hashed_password, client_key, server_key
         )
+    }
+}
+
+pub struct StoredPasswordScramSha1 {
+    inner: StoredPasswordScram<ScramSha1Ring>,
+}
+
+impl StoredPassword for StoredPasswordScramSha1 {
+    fn new(plaintext: &str) -> Result<Self, Error> {
+        let inner = StoredPasswordScram::<ScramSha1Ring>::new(plaintext)?;
+        Ok(Self { inner })
+    }
+}
+
+impl FromStr for StoredPasswordScramSha1 {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let inner = StoredPasswordScram::<ScramSha1Ring>::from_str(s)?;
+        Ok(Self { inner })
+    }
+}
+
+impl Display for StoredPasswordScramSha1 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
+    }
+}
+
+pub struct StoredPasswordScramSha256 {
+    inner: StoredPasswordScram<ScramSha256Ring>,
+}
+
+impl StoredPassword for StoredPasswordScramSha256 {
+    fn new(plaintext: &str) -> Result<Self, Error> {
+        let inner = StoredPasswordScram::<ScramSha256Ring>::new(plaintext)?;
+        Ok(Self { inner })
+    }
+}
+
+impl FromStr for StoredPasswordScramSha256 {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let inner = StoredPasswordScram::<ScramSha256Ring>::from_str(s)?;
+        Ok(Self { inner })
+    }
+}
+
+impl Display for StoredPasswordScramSha256 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        self.inner.fmt(f)
     }
 }
 

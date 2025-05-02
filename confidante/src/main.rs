@@ -1,5 +1,4 @@
 use clap::{Parser, Subcommand};
-use scram_rs::{ScramSha1Ring, ScramSha256Ring};
 
 use confidante_backend::settings::Settings;
 use confidante_backend::store::{SqliteStoreBackend, StoreHandle};
@@ -8,7 +7,7 @@ use confidante_core::xmpp::jid::Jid;
 use confidante_inbound::connection::debug::DebugConnection;
 use confidante_inbound::connection::tcp::TcpConnection;
 use confidante_inbound::{
-    InboundStream, StoredPassword, StoredPasswordArgon2, StoredPasswordScram,
+    InboundStream, sasl::{StoredPassword, StoredPasswordArgon2, StoredPasswordScramSha1, StoredPasswordScramSha256},
 };
 use confidante_services::router::RouterHandle;
 
@@ -39,9 +38,9 @@ async fn main() -> Result<(), Error> {
             let bare_jid = bare_jid.parse::<Jid>()?.to_bare();
             let stored_password_argon2 = StoredPasswordArgon2::new(&password)?.to_string();
             let stored_password_scram_sha1 =
-                StoredPasswordScram::<ScramSha1Ring>::new(&password)?.to_string();
+                StoredPasswordScramSha1::new(&password)?.to_string();
             let stored_password_scram_sha256 =
-                StoredPasswordScram::<ScramSha256Ring>::new(&password)?.to_string();
+                StoredPasswordScramSha256::new(&password)?.to_string();
             store
                 .add_user(
                     bare_jid,
