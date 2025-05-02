@@ -6,7 +6,6 @@ use tokio::select;
 use tokio::sync::mpsc::{self, Receiver, Sender};
 use tokio_stream::StreamExt;
 
-use confidante_backend::settings::{Settings, TlsSettings};
 use confidante_backend::store::StoreHandle;
 use confidante_core::xml::namespaces;
 use confidante_core::xml::stream_parser::StreamParser;
@@ -25,15 +24,15 @@ use self::sasl::SaslNegotiator;
 use bind::ResourceBindingNegotiator;
 use starttls::StarttlsNegotiator;
 
-
+mod bind;
 pub mod connection;
 pub mod sasl;
-mod bind;
 mod starttls;
 
 const STANZA_CHANNEL_BUFFER_SIZE: usize = 8;
 
-enum ConnectionType {
+#[derive(Clone, Copy)]
+pub enum ConnectionType {
     Client,
     Server,
 }
@@ -67,6 +66,12 @@ impl Default for StreamInfo {
     }
 }
 
+pub struct InboundStreamSettings {
+    pub connection_type: ConnectionType,
+    pub domain: Jid,
+    pub tls_required: bool,
+}
+
 pub struct InboundStream<C, P>
 where
     C: Connection,
@@ -78,7 +83,7 @@ where
     stanza_tx: Sender<Stanza>,
     stanza_rx: Receiver<Stanza>,
     store: StoreHandle,
-    settings: Settings,
+    settings: InboundStreamSettings,
 }
 
 impl<C, P> InboundStream<C, P>
@@ -90,7 +95,7 @@ where
         connection: C,
         router: RouterHandle,
         store: StoreHandle,
-        settings: Settings,
+        settings: InboundStreamSettings,
     ) -> Self {
         let stream = XmppStream::new(connection);
         let info = StreamInfo::default();
@@ -161,12 +166,7 @@ where
             features.push(StreamFeatures::Tls);
         }
 
-        let tls_required = match self.info.connection_type {
-            Some(ConnectionType::Client) => self.settings.tls.required_for_clients,
-            Some(ConnectionType::Server) => self.settings.tls.required_for_servers,
-            None => false,
-        };
-        if (!tls_required || self.info.features.contains(&StreamFeatures::Tls))
+        if (!self.settings.tls_required || self.info.features.contains(&StreamFeatures::Tls))
             && !self.info.features.contains(&StreamFeatures::Authentication)
         {
             features.push(StreamFeatures::Authentication);
@@ -291,7 +291,7 @@ where
 
         self.info.jid = inbound_header.to;
         self.info.peer_language = inbound_header.language;
-        self.info.connection_type = Some(ConnectionType::Client);
+        self.info.connection_type = Some(self.settings.connection_type);
 
         self.send_stream_header(self.info.peer_jid.clone()).await
     }
