@@ -17,7 +17,7 @@ impl StreamId {
     }
 
     fn generate_id() -> String {
-        let mut rng = rand_chacha::ChaCha20Rng::from_entropy();
+        let mut rng = rand_chacha::ChaCha20Rng::from_os_rng();
         let mut id_raw = [0u8; 16];
         rng.fill_bytes(&mut id_raw);
 

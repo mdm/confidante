@@ -42,7 +42,7 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
             bail!("`from` field is required in outgoing stream header");
         };
 
-        let mut rng = rand_chacha::ChaCha20Rng::from_entropy();
+        let mut rng = rand_chacha::ChaCha20Rng::from_os_rng();
         let mut id_raw = [0u8; 16];
         rng.fill_bytes(&mut id_raw);
         let id_encoded = BASE64_STANDARD.encode(id_raw);
