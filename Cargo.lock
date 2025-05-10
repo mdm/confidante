@@ -376,6 +376,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "confidante-core",
+ "confidante-inbound",
  "config",
  "rustls-native-certs",
  "rustls-pemfile",

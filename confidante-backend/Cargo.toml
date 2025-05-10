@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 confidante-core = { path = "../confidante-core" }
+confidante-inbound = { path = "../confidante-inbound" }
 anyhow = "1.0.98"
 config = { version = "0.15.11", features = ["yaml"] }
 rustls-native-certs = "0.8.1"

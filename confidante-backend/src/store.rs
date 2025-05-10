@@ -7,6 +7,7 @@ use tokio::{
 };
 
 use confidante_core::xmpp::jid::Jid;
+use confidante_inbound::sasl::StoredPasswordLookup;
 
 pub use self::sqlite::SqliteStoreBackend;
 
@@ -216,6 +217,29 @@ impl StoreHandle {
 
         let _ = self.commands.send(msg).await;
         result_rx.await.expect("Store is gone")
+    }
+}
+
+impl StoredPasswordLookup for StoreHandle {
+    fn get_stored_password_argon2(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send {
+        self.get_stored_password(jid, StoredPasswordKind::Argon2)
+    }
+
+    fn get_stored_password_scram_sha1(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send {
+        self.get_stored_password(jid, StoredPasswordKind::ScramSha1)
+    }
+
+    fn get_stored_password_scram_sha256(
+        &self,
+        jid: Jid,
+    ) -> impl std::future::Future<Output = Result<String, anyhow::Error>> + Send {
+        self.get_stored_password(jid, StoredPasswordKind::ScramSha256)
     }
 }
 
