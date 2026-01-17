@@ -31,16 +31,17 @@ impl StoreBackend for SqliteStoreBackend {
         stored_password_scram_sha1: String,
         stored_password_scram_sha256: String,
     ) -> Result<(), Error> {
-        sqlx::query(
+        let bare_jid = jid.to_bare().to_string();
+        sqlx::query!(
                 r#"
                 INSERT INTO users (bare_jid, stored_password_argon2, stored_password_scram_sha1, stored_password_scram_sha256)
                 VALUES (?, ?, ?, ?)
                 "#,
+                bare_jid,
+                stored_password_argon2,
+                stored_password_scram_sha1,
+                stored_password_scram_sha256,
             )
-            .bind(jid.to_bare().to_string())
-            .bind(stored_password_argon2)
-            .bind(stored_password_scram_sha1)
-            .bind(stored_password_scram_sha256)
             .execute(&self.pool)
             .await?;
 
@@ -48,13 +49,14 @@ impl StoreBackend for SqliteStoreBackend {
     }
 
     async fn remove_user(&mut self, jid: Jid) -> Result<(), Error> {
-        sqlx::query(
+        let bare_jid = jid.to_bare().to_string();
+        sqlx::query!(
             r#"
                 DELETE FROM users
                 WHERE bare_jid = ?
                 "#,
+            bare_jid,
         )
-        .bind(jid.to_bare().to_string())
         .execute(&self.pool)
         .await?;
 
@@ -66,14 +68,16 @@ impl StoreBackend for SqliteStoreBackend {
         jid: Jid,
         kind: StoredPasswordKind,
     ) -> Result<String, Error> {
-        let user = sqlx::query_as::<_, User>(
+        let bare_jid = jid.to_bare().to_string();
+        let user = sqlx::query_as!(
+            User,
             r#"
-            SELECT bare_jid, stored_password_argon2, stored_password_scram_sha1, stored_password_scram_sha256
+            SELECT stored_password_argon2, stored_password_scram_sha1, stored_password_scram_sha256
             FROM users
             WHERE bare_jid = ?
             "#,
+            bare_jid,
         )
-        .bind(jid.to_bare().to_string())
         .fetch_one(&self.pool)
         .await?;
 
@@ -90,35 +94,48 @@ impl StoreBackend for SqliteStoreBackend {
         kind: StoredPasswordKind,
         stored_password: String,
     ) -> Result<(), Error> {
-        let query = match kind {
+        let bare_jid = jid.to_bare().to_string();
+        match kind {
             StoredPasswordKind::Argon2 => {
-                r#"
+                sqlx::query!(
+                    r#"
                 UPDATE users
                 SET stored_password_argon2 = ?
                 WHERE bare_jid = ?
-                "#
+                "#,
+                    stored_password,
+                    bare_jid
+                )
+                .execute(&self.pool)
+                .await?;
             }
             StoredPasswordKind::ScramSha1 => {
-                r#"
+                sqlx::query!(
+                    r#"
                 UPDATE users
                 SET stored_password_scram_sha1 = ?
                 WHERE bare_jid = ?
-                "#
+                "#,
+                    stored_password,
+                    bare_jid
+                )
+                .execute(&self.pool)
+                .await?;
             }
             StoredPasswordKind::ScramSha256 => {
-                r#"
+                sqlx::query!(
+                    r#"
                 UPDATE users
                 SET stored_password_scram_sha256 = ?
                 WHERE bare_jid = ?
-                "#
+                "#,
+                    stored_password,
+                    bare_jid
+                )
+                .execute(&self.pool)
+                .await?;
             }
         };
-
-        sqlx::query(query)
-            .bind(stored_password)
-            .bind(jid.to_bare().to_string())
-            .execute(&self.pool)
-            .await?;
 
         Ok(())
     }
