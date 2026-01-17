@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 confidante-core = { path = "../confidante-core" }
-confidante-services = { path = "../confidante-services" }  # invert dependency on router
+confidante-services = { path = "../confidante-services" }  # invert dependency on router? - no this is fine because the router is a core component
 anyhow = "1.0.98"                                          # get rid of this dependency. it makes reuse hard
 argon2 = { version = "0.5.3", features = ["std"] }
 base64 = "0.22.1"

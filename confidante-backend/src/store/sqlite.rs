@@ -1,5 +1,5 @@
 use anyhow::Error;
-use sqlx::{Pool, Sqlite, migrate, sqlite::SqlitePoolOptions};
+use sqlx::{Pool, Sqlite, sqlite::SqlitePoolOptions};
 
 use confidante_core::xmpp::jid::Jid;
 
@@ -126,7 +126,6 @@ impl StoreBackend for SqliteStoreBackend {
 
 #[derive(sqlx::FromRow)]
 struct User {
-    bare_jid: String,
     stored_password_argon2: String,
     stored_password_scram_sha1: String,
     stored_password_scram_sha256: String,

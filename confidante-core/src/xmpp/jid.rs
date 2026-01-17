@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{bail, Error};
+use anyhow::{Error, bail};
 use regex::Regex;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -101,10 +101,10 @@ impl Display for Jid {
             Some(local) => write!(f, "{}@{}", local, self.domain)?,
             None => write!(f, "{}", self.domain)?,
         }
-        match &self.resource {
-            Some(resource) => write!(f, "/{}", resource)?,
-            None => (),
+        if let Some(resource) = &self.resource {
+            write!(f, "/{}", resource)?;
         }
+
         Ok(())
     }
 }

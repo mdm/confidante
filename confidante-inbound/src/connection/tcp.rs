@@ -10,6 +10,7 @@ use tokio_rustls::{Accept, TlsAcceptor, rustls::ServerConfig, server::TlsStream}
 
 use confidante_core::xmpp::stream::Connection;
 
+#[allow(clippy::large_enum_variant)]
 enum Socket {
     Plain(TcpStream),
     Tls(TlsStream<TcpStream>),

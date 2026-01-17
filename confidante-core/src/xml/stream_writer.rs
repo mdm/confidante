@@ -1,13 +1,11 @@
 use std::collections::HashMap;
 
-use anyhow::{anyhow, bail, Error};
-use base64::prelude::*;
-use rand::{RngCore, SeedableRng};
+use anyhow::{Error, anyhow, bail};
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
-use crate::xml::namespaces;
 use crate::xml::Element;
 use crate::xml::Node;
+use crate::xml::namespaces;
 use crate::xmpp::stream_header::StreamHeader;
 
 pub struct StreamWriter<W: AsyncWrite + Unpin> {
@@ -38,18 +36,17 @@ impl<W: AsyncWrite + Unpin> StreamWriter<W> {
             self.write_xml_declaration().await?;
         }
 
+        let Some(ref id) = header.id else {
+            bail!("`id` field is required in outgoing stream header");
+        };
+
         let Some(ref from) = header.from else {
             bail!("`from` field is required in outgoing stream header");
         };
 
-        let mut rng = rand_chacha::ChaCha20Rng::from_os_rng();
-        let mut id_raw = [0u8; 16];
-        rng.fill_bytes(&mut id_raw);
-        let id_encoded = BASE64_STANDARD.encode(id_raw);
-
         let mut header_attributes = HashMap::new();
         header_attributes.insert(("from".to_string(), None), from.to_string());
-        header_attributes.insert(("id".to_string(), None), id_encoded);
+        header_attributes.insert(("id".to_string(), None), id.to_string());
         header_attributes.insert(("version".to_string(), None), "1.0".to_string());
         header_attributes.insert(
             ("lang".to_string(), Some(namespaces::XML.to_string())),

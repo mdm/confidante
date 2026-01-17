@@ -174,15 +174,14 @@ where
             features.push(StreamFeatures::Authentication);
         }
 
-        if let Some(ConnectionType::Client) = self.info.connection_type {
-            if self.info.features.contains(&StreamFeatures::Authentication)
-                && !self
-                    .info
-                    .features
-                    .contains(&StreamFeatures::ResourceBinding)
-            {
-                features.push(StreamFeatures::ResourceBinding);
-            }
+        if let Some(ConnectionType::Client) = self.info.connection_type
+            && self.info.features.contains(&StreamFeatures::Authentication)
+            && !self
+                .info
+                .features
+                .contains(&StreamFeatures::ResourceBinding)
+        {
+            features.push(StreamFeatures::ResourceBinding);
         }
 
         features
