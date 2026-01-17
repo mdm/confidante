@@ -4,3 +4,5 @@ log/*
 db/*.sqlite3*
 .vscode
 *.svg
+.env
+.sqlx
