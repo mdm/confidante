@@ -9,10 +9,6 @@ use confidante_core::{
     },
 };
 
-#[allow(clippy::manual_non_exhaustive)]
-#[derive(Debug)]
-pub struct BoundResource(pub String, ());
-
 pub struct ResourceBindingNegotiator {
     _private: (),
 }

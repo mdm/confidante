@@ -47,10 +47,6 @@ pub trait StoredPasswordLookup: Clone + Debug {
     ) -> impl std::future::Future<Output = Result<String, Error>> + Send;
 }
 
-#[allow(clippy::manual_non_exhaustive)]
-#[derive(Debug)]
-pub(super) struct AuthenticatedEntity(pub String, ());
-
 pub(super) struct SaslNegotiator {
     _private: (),
 }

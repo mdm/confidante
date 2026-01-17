@@ -1,9 +1,9 @@
-use std::future::Future;
+use std::{fmt::Display, future::Future};
 
 use anyhow::Error;
 use base64::prelude::*;
 use rand::{RngCore, SeedableRng};
-use tokio::io::{split, AsyncRead, AsyncWrite, ReadHalf, WriteHalf};
+use tokio::io::{AsyncRead, AsyncWrite, ReadHalf, WriteHalf, split};
 
 use crate::xml::{stream_parser::StreamParser, stream_writer::StreamWriter};
 
@@ -22,6 +22,18 @@ impl StreamId {
         rng.fill_bytes(&mut id_raw);
 
         BASE64_STANDARD.encode(id_raw)
+    }
+}
+
+impl Default for StreamId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Display for StreamId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 

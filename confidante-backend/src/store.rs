@@ -11,6 +11,7 @@ use confidante_inbound::sasl::StoredPasswordLookup;
 
 pub use self::sqlite::SqliteStoreBackend;
 
+#[cfg(test)]
 mod fake;
 mod sqlite;
 
@@ -243,7 +244,7 @@ impl StoredPasswordLookup for StoreHandle {
     }
 }
 
-trait StoreBackend {
+pub trait StoreBackend {
     fn add_user(
         &mut self,
         jid: Jid,
@@ -279,7 +280,7 @@ mod test {
     #[tokio::test]
     async fn test_store_query() {
         let stored_password_argon2 = "super secret password";
-        let mut store = StoreHandle::new(FakeStoreBackend {
+        let store = StoreHandle::new(FakeStoreBackend {
             stored_password_argon2: Some(stored_password_argon2.to_string()),
             ..Default::default()
         });

@@ -75,3 +75,9 @@ impl RouterHandle {
         self.stanzas.send(stanza).await.unwrap();
     }
 }
+
+impl Default for RouterHandle {
+    fn default() -> Self {
+        Self::new()
+    }
+}

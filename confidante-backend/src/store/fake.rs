@@ -6,7 +6,6 @@ use crate::store::StoredPasswordKind;
 
 use super::StoreBackend;
 
-#[cfg(test)]
 #[derive(Default)]
 pub struct FakeStoreBackend {
     pub stored_password_argon2: Option<String>,
@@ -14,7 +13,6 @@ pub struct FakeStoreBackend {
     pub stored_password_scram_sha256: Option<String>,
 }
 
-#[cfg(test)]
 impl StoreBackend for FakeStoreBackend {
     async fn add_user(
         &mut self,
