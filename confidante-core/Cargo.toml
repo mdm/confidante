@@ -1,0 +1,17 @@
+[package]
+name = "confidante-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+base64 = "0.22.1"
+bytes = "1.10.1"
+pin-project = "1.1.10"
+rand = "0.9.1"
+rand_chacha = "0.9.0"
+regex = "1.11.1"
+rustyxml = { package = "RustyXML", version = "0.3.0" }
+tokio = { version = "1.44.2", features = ["full"] }
+tokio-stream = "0.1.17"
+uuid = { version = "1.16.0", features = ["v4"] }

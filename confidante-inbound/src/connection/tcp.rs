@@ -1,0 +1,134 @@
+use std::future::Future;
+use std::{pin::Pin, sync::Arc, task::ready};
+
+use anyhow::{Error, anyhow};
+use tokio::{
+    io::{AsyncRead, AsyncWrite},
+    net::TcpStream,
+};
+use tokio_rustls::{Accept, TlsAcceptor, rustls::ServerConfig, server::TlsStream};
+
+use confidante_core::xmpp::stream::Connection;
+
+enum Socket {
+    Plain(TcpStream),
+    Tls(TlsStream<TcpStream>),
+}
+
+pub struct TcpConnection {
+    socket: Socket,
+    tls_server_config: Option<Arc<ServerConfig>>,
+    starttls_allowed: bool,
+}
+
+impl TcpConnection {
+    pub fn new(socket: TcpStream, tls_config: Arc<ServerConfig>, starttls_allowed: bool) -> Self {
+        let socket = Socket::Plain(socket);
+
+        TcpConnection {
+            socket,
+            tls_server_config: Some(tls_config),
+            starttls_allowed,
+        }
+    }
+}
+
+impl Connection for TcpConnection {
+    type Upgrade = TcpConnectionUpgrade;
+
+    fn upgrade(self) -> Result<Self::Upgrade, Error> {
+        match self.socket {
+            Socket::Plain(socket) => {
+                let tls_config = self
+                    .tls_server_config
+                    .ok_or_else(|| anyhow!("TLS config not set"))?;
+                let accept = TlsAcceptor::from(tls_config).accept(socket);
+
+                Ok(TcpConnectionUpgrade { accept })
+            }
+            Socket::Tls(_) => Err(anyhow!("Connection is already secure")),
+        }
+    }
+
+    fn is_starttls_allowed(&self) -> bool {
+        self.starttls_allowed
+    }
+
+    fn is_secure(&self) -> bool {
+        matches!(self.socket, Socket::Tls(_))
+    }
+
+    fn is_authenticated(&self) -> bool {
+        match &self.socket {
+            Socket::Plain(_) => false,
+            Socket::Tls(socket) => socket.get_ref().1.peer_certificates().is_some(),
+        }
+    }
+}
+
+impl AsyncRead for TcpConnection {
+    fn poll_read(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match &mut self.socket {
+            Socket::Plain(socket) => Pin::new(socket).poll_read(cx, buf),
+            Socket::Tls(socket) => Pin::new(socket).poll_read(cx, buf),
+        }
+    }
+}
+
+impl AsyncWrite for TcpConnection {
+    fn poll_write(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &[u8],
+    ) -> std::task::Poll<std::io::Result<usize>> {
+        match &mut self.socket {
+            Socket::Plain(socket) => Pin::new(socket).poll_write(cx, buf),
+            Socket::Tls(socket) => Pin::new(socket).poll_write(cx, buf),
+        }
+    }
+
+    fn poll_flush(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match &mut self.socket {
+            Socket::Plain(socket) => Pin::new(socket).poll_flush(cx),
+            Socket::Tls(socket) => Pin::new(socket).poll_flush(cx),
+        }
+    }
+
+    fn poll_shutdown(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        match &mut self.socket {
+            Socket::Plain(socket) => Pin::new(socket).poll_shutdown(cx),
+            Socket::Tls(socket) => Pin::new(socket).poll_shutdown(cx),
+        }
+    }
+}
+
+pub struct TcpConnectionUpgrade {
+    accept: Accept<TcpStream>,
+}
+
+impl Future for TcpConnectionUpgrade {
+    type Output = Result<TcpConnection, Error>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let tls_stream = ready!(Pin::new(&mut self.accept).poll(cx))?;
+        let connection = TcpConnection {
+            socket: Socket::Tls(tls_stream),
+            tls_server_config: None,
+            starttls_allowed: false,
+        };
+        std::task::Poll::Ready(Ok(connection))
+    }
+}
