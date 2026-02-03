@@ -9,11 +9,11 @@ use confidante_inbound::connection::tcp::TcpConnection;
 use confidante_inbound::{ConnectionType, InboundStreamSettings};
 use confidante_inbound::{
     InboundStream,
-    sasl::{
-        StoredPassword, StoredPasswordArgon2, StoredPasswordScramSha1, StoredPasswordScramSha256,
-    },
+    sasl::{StoredPassword, StoredPasswordArgon2, StoredPasswordScram},
 };
 use confidante_services::router::RouterHandle;
+use sha1::Sha1;
+use sha2::Sha256;
 
 type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -41,9 +41,10 @@ async fn main() -> Result<(), Error> {
         Some(Commands::AddUser { bare_jid, password }) => {
             let bare_jid = bare_jid.parse::<Jid>()?.to_bare();
             let stored_password_argon2 = StoredPasswordArgon2::new(&password)?.to_string();
-            let stored_password_scram_sha1 = StoredPasswordScramSha1::new(&password)?.to_string();
+            let stored_password_scram_sha1 =
+                StoredPasswordScram::<Sha1>::new(&password)?.to_string();
             let stored_password_scram_sha256 =
-                StoredPasswordScramSha256::new(&password)?.to_string();
+                StoredPasswordScram::<Sha256>::new(&password)?.to_string();
             store
                 .add_user(
                     bare_jid,

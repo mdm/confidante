@@ -5,14 +5,24 @@ edition = "2024"
 
 [dependencies]
 confidante-core = { path = "../confidante-core" }
-confidante-services = { path = "../confidante-services" }  # invert dependency on router? - no this is fine because the router is a core component
-anyhow = "1.0.98"                                          # get rid of this dependency. it makes reuse hard
+confidante-services = { path = "../confidante-services" } # invert dependency on router? - no this is fine because the router is a core component
+anyhow = "1.0.98" # get rid of this dependency. it makes reuse hard
 argon2 = { version = "0.5.3", features = ["std"] }
 base64 = "0.22.1"
 password-hash = "0.5.0"
-scram-rs = { version = "0.13.2", features = ["use_ring"] }
+rsasl = { version = "2.2.0", default-features = false, features = [
+  "config_builder",
+  "provider",
+  "external",
+  "plain",
+  "scram-sha-1",
+  "scram-sha-2",
+] }
 thiserror = "2.0.12"
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
 uuid = { version = "1.16.0", features = ["v4"] }
+sha2 = "0.10.9"
+digest = "0.10.7"
+sha1 = "0.10.6"
