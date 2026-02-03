@@ -10,4 +10,6 @@ confidante-inbound = { path = "../confidante-inbound" }
 confidante-services = { path = "../confidante-services" }
 anyhow = "1.0.98"
 clap = { version = "4.5.37", features = ["derive"] }
+sha1 = "0.10.6"
+sha2 = "0.10.9"
 tokio = { version = "1.44.2", features = ["full"] }

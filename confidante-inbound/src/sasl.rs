@@ -6,6 +6,8 @@ use std::{
 
 use anyhow::{Error, bail};
 use base64::prelude::*;
+use sha1::Sha1;
+use sha2::Sha256;
 use tokio::io::ReadHalf;
 use tokio_stream::StreamExt;
 
@@ -21,9 +23,9 @@ use confidante_core::{
 };
 
 pub use self::plain::StoredPasswordArgon2;
-pub use self::scram::StoredPasswordScramSha1;
-pub use self::scram::StoredPasswordScramSha256;
+pub use self::scram::StoredPasswordScram;
 
+mod common;
 mod plain;
 mod scram;
 
@@ -150,6 +152,9 @@ impl SaslNegotiator {
             Mechanism::External => secure && authenticated,
             Mechanism::Plain => secure,
             Mechanism::ScramSha1 => true,
+            Mechanism::ScramSha1Plus => true,
+            Mechanism::ScramSha256 => true,
+            Mechanism::ScramSha256Plus => true,
         }
     }
 }
@@ -164,6 +169,9 @@ enum Mechanism {
     External,
     Plain,
     ScramSha1,
+    ScramSha1Plus,
+    ScramSha256,
+    ScramSha256Plus,
 }
 
 impl Mechanism {
@@ -181,7 +189,18 @@ impl Mechanism {
         match self {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
-            Mechanism::ScramSha1 => scram::ScramSha1Negotiator::new("localhost".to_string(), store),
+            Mechanism::ScramSha1 => {
+                scram::ScramNegotiator::<S, Sha1>::new("localhost".to_string(), false, store)
+            }
+            Mechanism::ScramSha1Plus => {
+                scram::ScramNegotiator::<S, Sha1>::new("localhost".to_string(), true, store)
+            }
+            Mechanism::ScramSha256 => {
+                scram::ScramNegotiator::<S, Sha256>::new("localhost".to_string(), false, store)
+            }
+            Mechanism::ScramSha256Plus => {
+                scram::ScramNegotiator::<S, Sha256>::new("localhost".to_string(), true, store)
+            }
         }
     }
 }
@@ -205,6 +224,9 @@ impl Display for Mechanism {
             Mechanism::External => write!(f, "EXTERNAL"),
             Mechanism::Plain => write!(f, "PLAIN"),
             Mechanism::ScramSha1 => write!(f, "SCRAM-SHA-1"),
+            Mechanism::ScramSha1Plus => write!(f, "SCRAM-SHA-1-PLUS"),
+            Mechanism::ScramSha256 => write!(f, "SCRAM-SHA-256"),
+            Mechanism::ScramSha256Plus => write!(f, "SCRAM-SHA-256-PLUS"),
         }
     }
 }
@@ -219,9 +241,6 @@ trait MechanismNegotiator<S>
 where
     S: StoredPasswordLookup + Send + Sync,
 {
-    fn new(resolved_domain: String, store: S) -> Result<Self, Error>
-    where
-        Self: Sized;
     fn process(
         &mut self,
         payload: Vec<u8>,
