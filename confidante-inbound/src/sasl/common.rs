@@ -57,10 +57,14 @@ pub fn authenticate(
 
     while {
         let mut server_out = Cursor::new(Vec::new());
-        let input = input_rx
-            .blocking_recv()
-            .ok_or(anyhow!("Failed to receive SASL input"))?;
-        let state = server_session.step(Some(input.as_slice()), &mut server_out);
+        let state = if server_session.are_we_first() {
+            server_session.step(None, &mut server_out)
+        } else {
+            let input = input_rx
+                .blocking_recv()
+                .ok_or(anyhow!("Failed to receive SASL input"))?;
+            server_session.step(Some(input.as_slice()), &mut server_out)
+        };
         let running = state.as_ref().is_ok_and(|s| s.is_running());
 
         let output = match state {
