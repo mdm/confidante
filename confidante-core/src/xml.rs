@@ -141,10 +141,12 @@ mod tests {
         let child = Element::new("baz", Some("qux"));
         parent.add_child(child);
         assert!(parent.find_child("baz", Some("qux")).is_some());
-        assert!(parent
-            .find_child("baz", Some("qux"))
-            .unwrap()
-            .validate("baz", Some("qux")));
+        assert!(
+            parent
+                .find_child("baz", Some("qux"))
+                .unwrap()
+                .validate("baz", Some("qux"))
+        );
     }
 
     #[test]
@@ -155,10 +157,12 @@ mod tests {
         let child = Element::new("qux", Some("qux"));
         parent.add_child(child);
         assert!(parent.find_child("qux", Some("qux")).is_some());
-        assert!(parent
-            .find_child("qux", Some("qux"))
-            .unwrap()
-            .validate("qux", Some("qux")));
+        assert!(
+            parent
+                .find_child("qux", Some("qux"))
+                .unwrap()
+                .validate("qux", Some("qux"))
+        );
     }
 
     #[test]
@@ -190,6 +194,7 @@ mod tests {
         assert_eq!(element.text(), "baz");
     }
 
+    #[test]
     fn text_nested() {
         let mut parent = Element::new("foo", Some("bar"));
         parent.add_text("before".to_string());
