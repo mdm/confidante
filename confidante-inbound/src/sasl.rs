@@ -90,7 +90,7 @@ impl SaslNegotiator {
         P: StreamParser<ReadHalf<C>>,
         S: StoredPasswordLookup + Send + Sync,
     {
-        if element.validate("auth", Some(namespaces::XMPP_SASL)) {
+        if !element.validate("auth", Some(namespaces::XMPP_SASL)) {
             bail!("expected auth element");
         }
 

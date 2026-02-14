@@ -26,7 +26,7 @@ impl StarttlsNegotiator {
         C: Connection,
         P: StreamParser<ReadHalf<C>>,
     {
-        if element.validate("starttls", Some(namespaces::XMPP_STARTTLS)) {
+        if !element.validate("starttls", Some(namespaces::XMPP_STARTTLS)) {
             bail!("expected starttls element");
         }
 
