@@ -22,6 +22,8 @@ use confidante_core::{
     },
 };
 
+use crate::sasl::scram::ScramNegotiator;
+
 pub use self::plain::StoredPasswordArgon2;
 pub use self::scram::StoredPasswordScram;
 
@@ -59,15 +61,15 @@ impl SaslNegotiator {
 
         let mut no_mechanisms = true;
         if Self::mechanism_available(&Mechanism::External, secure, authenticated) {
-            mechanisms.add_child(Mechanism::External.to_element());
+            mechanisms.add_child(Mechanism::External.into());
             no_mechanisms = false;
         }
         if Self::mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
-            mechanisms.add_child(Mechanism::ScramSha1.to_element());
+            mechanisms.add_child(Mechanism::ScramSha1.into());
             no_mechanisms = false;
         }
         if Self::mechanism_available(&Mechanism::Plain, secure, authenticated) {
-            mechanisms.add_child(Mechanism::Plain.to_element());
+            mechanisms.add_child(Mechanism::Plain.into());
             no_mechanisms = false;
         }
 
@@ -165,6 +167,7 @@ pub(super) enum SaslError {
     UnsupportedMechanism(String),
 }
 
+#[derive(Debug, Clone, Copy)]
 enum Mechanism {
     External,
     Plain,
@@ -175,14 +178,7 @@ enum Mechanism {
 }
 
 impl Mechanism {
-    fn to_element(&self) -> Element {
-        let mut element = Element::new("mechanism", Some(namespaces::XMPP_SASL));
-        element.add_text(self.to_string());
-
-        element
-    }
-
-    fn negotiator<S>(&self, store: S) -> Result<impl MechanismNegotiator<S>, Error>
+    fn negotiator<S>(&self, store: S) -> Result<MechanismNegotiator<S>, Error>
     where
         S: StoredPasswordLookup + Send + Sync,
     {
@@ -190,16 +186,20 @@ impl Mechanism {
             Mechanism::External => todo!(),
             Mechanism::Plain => todo!(),
             Mechanism::ScramSha1 => {
-                scram::ScramNegotiator::<S, Sha1>::new("localhost".to_string(), false, store)
+                ScramNegotiator::<S, Sha1>::new("localhost".to_string(), false, store)
+                    .map(MechanismNegotiator::ScramSha1)
             }
             Mechanism::ScramSha1Plus => {
-                scram::ScramNegotiator::<S, Sha1>::new("localhost".to_string(), true, store)
+                ScramNegotiator::<S, Sha1>::new("localhost".to_string(), true, store)
+                    .map(MechanismNegotiator::ScramSha1Plus)
             }
             Mechanism::ScramSha256 => {
-                scram::ScramNegotiator::<S, Sha256>::new("localhost".to_string(), false, store)
+                ScramNegotiator::<S, Sha256>::new("localhost".to_string(), false, store)
+                    .map(MechanismNegotiator::ScramSha256)
             }
             Mechanism::ScramSha256Plus => {
-                scram::ScramNegotiator::<S, Sha256>::new("localhost".to_string(), true, store)
+                ScramNegotiator::<S, Sha256>::new("localhost".to_string(), true, store)
+                    .map(MechanismNegotiator::ScramSha256Plus)
             }
         }
     }
@@ -231,18 +231,55 @@ impl Display for Mechanism {
     }
 }
 
+impl From<Mechanism> for Element {
+    fn from(mechanism: Mechanism) -> Self {
+        let mut element = Element::new("mechanism", Some(namespaces::XMPP_SASL));
+        element.add_text(mechanism.to_string());
+
+        element
+    }
+}
+
 enum MechanismNegotiatorResult {
     Challenge(Vec<u8>),
     Success(Jid, Option<Vec<u8>>),
     Failure(Error),
 }
 
-trait MechanismNegotiator<S>
+enum MechanismNegotiator<S> {
+    External,
+    Plain,
+    ScramSha1(ScramNegotiator<S, Sha1>),
+    ScramSha1Plus(ScramNegotiator<S, Sha1>),
+    ScramSha256(ScramNegotiator<S, Sha256>),
+    ScramSha256Plus(ScramNegotiator<S, Sha256>),
+}
+
+impl<S> MechanismNegotiator<S>
 where
     S: StoredPasswordLookup + Send + Sync,
 {
-    fn process(
-        &mut self,
-        payload: Vec<u8>,
-    ) -> impl Future<Output = MechanismNegotiatorResult> + Send;
+    async fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
+        match self {
+            MechanismNegotiator::External => todo!(),
+            MechanismNegotiator::Plain => todo!(),
+            MechanismNegotiator::ScramSha1(negotiator) => negotiator.process(payload).await,
+            MechanismNegotiator::ScramSha1Plus(negotiator) => negotiator.process(payload).await,
+            MechanismNegotiator::ScramSha256(negotiator) => negotiator.process(payload).await,
+            MechanismNegotiator::ScramSha256Plus(negotiator) => negotiator.process(payload).await,
+        }
+    }
+
+    async fn authentication_id(self) -> Result<String, Error> {
+        match self {
+            MechanismNegotiator::External => todo!(),
+            MechanismNegotiator::Plain => todo!(),
+            MechanismNegotiator::ScramSha1(negotiator) => negotiator.authentication_id().await,
+            MechanismNegotiator::ScramSha1Plus(negotiator) => negotiator.authentication_id().await,
+            MechanismNegotiator::ScramSha256(negotiator) => negotiator.authentication_id().await,
+            MechanismNegotiator::ScramSha256Plus(negotiator) => {
+                negotiator.authentication_id().await
+            }
+        }
+    }
 }

@@ -267,16 +267,11 @@ where
             output_rx,
             password_lookup_rx,
             store,
+            authenticator,
         })
     }
-}
 
-impl<S, D> MechanismNegotiator<S> for ScramNegotiator<S, D>
-where
-    S: StoredPasswordLookup + Send + Sync,
-    D: Digest + BlockSizeUser + FixedOutputReset + MechanismDigest + Clone + Send + Sync + 'static, // TODO: minimize bounds
-{
-    async fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
+    pub async fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
         self.input_tx.send(payload).await.unwrap();
 
         loop {
