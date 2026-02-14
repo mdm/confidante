@@ -1,7 +1,6 @@
 use std::{io::Cursor, sync::Arc};
 
 use anyhow::{Error, anyhow};
-use confidante_core::xmpp::jid::Jid;
 use rsasl::{
     callback::SessionCallback,
     config::SASLConfig,
@@ -12,7 +11,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::sasl::{MechanismNegotiatorResult, StoredPassword};
 
 #[derive(Debug)]
-enum AuthError {
+pub enum AuthError {
     AuthzBad,
     PasswordIncorrect,
     NoSuchUser,
@@ -29,17 +28,17 @@ pub trait SessionCallbackExt {
         &self,
         authid: &str,
         tx: mpsc::Sender<(String, oneshot::Sender<Result<P, Error>>)>,
-    ) -> Result<P, AuthError>
+    ) -> Result<P, Error>
     where
         P: StoredPassword,
     {
         let (response_tx, response_rx) = oneshot::channel();
         tx.blocking_send((authid.to_string(), response_tx))
-            .map_err(|_| AuthError::NoSuchUser)?;
+            .map_err(|_| anyhow!("Could not lookup stored password"))?;
         let stored_password = response_rx
             .blocking_recv()
-            .map_err(|_| AuthError::NoSuchUser)?;
-        stored_password.map_err(|_| AuthError::NoSuchUser)
+            .map_err(|_| anyhow!("Could not lookup stored password"))?;
+        stored_password.map_err(|_| anyhow!("Could not lookup stored password"))
     }
 }
 
@@ -71,14 +70,11 @@ pub fn authenticate(
             Ok(State::Running) => MechanismNegotiatorResult::Challenge(server_out.into_inner()),
             Ok(State::Finished(message_sent)) => {
                 // TODO: do AuthError validations use this arm? If yes, return Failure here
-                let username = server_session.validation().unwrap().unwrap();
-                // TODO: don't send JID here; it's doesn't need to be communicated to the client
-                let jid = Jid::new(Some(username), "localhost".to_string(), None);
                 let additional_data = match message_sent {
                     MessageSent::Yes => Some(server_out.into_inner()),
                     MessageSent::No => None,
                 };
-                MechanismNegotiatorResult::Success(jid, additional_data)
+                MechanismNegotiatorResult::Success(additional_data)
             }
             Err(err) => MechanismNegotiatorResult::Failure(anyhow!(err)),
         };

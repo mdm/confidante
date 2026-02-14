@@ -25,12 +25,12 @@ use sha2::Sha256;
 use tokio::{
     select,
     sync::{mpsc, oneshot},
-    task::spawn_blocking,
+    task::{JoinHandle, spawn_blocking},
 };
 
-use crate::sasl::common::{SessionCallbackExt, authenticate};
+use crate::sasl::common::{AuthError, SaslValidation, SessionCallbackExt, authenticate};
 
-use super::{MechanismNegotiator, MechanismNegotiatorResult, StoredPassword, StoredPasswordLookup};
+use super::{MechanismNegotiatorResult, StoredPassword, StoredPasswordLookup};
 
 const SCRAM_ITERATIONS: u32 = 4096;
 
@@ -218,12 +218,22 @@ where
 
     fn validate(
         &self,
-        session_data: &rsasl::callback::SessionData,
+        _session_data: &rsasl::callback::SessionData,
         context: &rsasl::callback::Context,
         validate: &mut rsasl::validate::Validate<'_>,
     ) -> Result<(), rsasl::validate::ValidationError> {
-        // silence the 'arg X not used' errors without having to prefix the parameter names with _
-        let _ = (session_data, context, validate);
+        validate.with::<SaslValidation, _>(|| {
+            let auth_id =
+                context
+                    .get_ref::<AuthId>()
+                    .map_or(
+                        Err(AuthError::NoSuchUser),
+                        |auth_id| Ok(auth_id.to_string()),
+                    );
+
+            Ok(auth_id)
+        })?;
+
         Ok(())
     }
 }
@@ -237,6 +247,7 @@ pub struct ScramNegotiator<S, D> {
         oneshot::Sender<Result<StoredPasswordScram<D>, Error>>,
     )>,
     store: S,
+    authenticator: JoinHandle<Result<String, Error>>,
 }
 
 impl<S, D> ScramNegotiator<S, D>
@@ -259,7 +270,8 @@ where
 
         let mechname = D::mechanism_name(channel_binding).try_into()?;
 
-        spawn_blocking(move || authenticate(config, mechname, input_rx, output_tx));
+        let authenticator =
+            spawn_blocking(move || authenticate(config, mechname, input_rx, output_tx));
 
         Ok(Self {
             resolved_domain,
@@ -287,5 +299,9 @@ where
                 }
             }
         }
+    }
+
+    pub async fn authentication_id(self) -> Result<String, Error> {
+        self.authenticator.await?
     }
 }
