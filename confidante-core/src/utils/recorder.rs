@@ -36,12 +36,12 @@ impl<S> StreamRecorder<S> {
         let input_recording = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&format!("log/{uuid}.in.xml")) // TODO: make the log directory configurable
+            .open(&format!("{uuid}.in.xml"))
             .await?;
         let output_recording = OpenOptions::new()
             .create(true)
             .append(true)
-            .open(&format!("log/{uuid}.out.xml")) // TODO: make the log directory configurable
+            .open(&format!("{uuid}.out.xml"))
             .await?;
 
         Ok(Self {
