@@ -1,6 +1,5 @@
 use std::{
     fmt::{Debug, Display},
-    future::Future,
     str::FromStr,
 };
 

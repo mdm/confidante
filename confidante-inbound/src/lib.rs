@@ -209,6 +209,7 @@ where
                     )
                     .await?,
                 );
+                dbg!(&peer_jid);
                 self.register_peer_jid(peer_jid).await;
                 self.info.features.insert(StreamFeatures::Authentication);
                 self.stream.reset();

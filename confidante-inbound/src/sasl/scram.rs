@@ -54,7 +54,7 @@ where
         hash_password::<D>(
             plaintext.as_bytes(),
             SCRAM_ITERATIONS,
-            &salt.as_str().as_bytes()[..],
+            salt.as_str().as_bytes(),
             &mut salted_password,
         );
         let (client_key, server_key) = derive_keys::<D>(salted_password.as_slice());
@@ -70,10 +70,7 @@ where
     }
 }
 
-impl<D> FromStr for StoredPasswordScram<D>
-where
-    D: Digest + BlockSizeUser + Clone + Sync, // TODO: minimize bounds
-{
+impl<D> FromStr for StoredPasswordScram<D> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -104,9 +101,10 @@ where
 
 impl<D> Display for StoredPasswordScram<D>
 where
-    D: Digest + BlockSizeUser + MechanismDigest + Clone + Sync, // TODO: minimize bounds
+    D: MechanismDigest,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        // For storage it's not important to know if channel binding is used
         let mechanism_name = D::mechanism_name(false);
         let iterations = self.iterations;
         let salt = BASE64_STANDARD.encode(&self.salt);
@@ -121,14 +119,14 @@ where
     }
 }
 
-trait MechanismDigest {
+pub(super) trait MechanismDigest {
     fn mechanism_name(channel_binding: bool) -> &'static str;
     fn lookup_password<S>(
         jid: Jid,
         store: &S,
     ) -> impl std::future::Future<Output = Result<String, Error>> + Send
     where
-        S: StoredPasswordLookup + Send + Sync;
+        S: StoredPasswordLookup;
 }
 
 impl MechanismDigest for Sha1 {
@@ -145,7 +143,7 @@ impl MechanismDigest for Sha1 {
         store: &S,
     ) -> impl std::future::Future<Output = Result<String, Error>> + Send
     where
-        S: StoredPasswordLookup + Send + Sync,
+        S: StoredPasswordLookup,
     {
         // TODO: check f we can make actores work with reference to moving the Jid here
         store.get_stored_password_scram_sha1(jid)
@@ -166,34 +164,28 @@ impl MechanismDigest for Sha256 {
         store: &S,
     ) -> impl std::future::Future<Output = Result<String, Error>> + Send
     where
-        S: StoredPasswordLookup + Send + Sync,
+        S: StoredPasswordLookup,
     {
         // TODO: check f we can make actores work with reference to moving the Jid here
         store.get_stored_password_scram_sha256(jid)
     }
 }
 
+type StoredPasswordSender<D> = oneshot::Sender<Result<StoredPasswordScram<D>, Error>>;
+
 struct ScramCallback<D> {
-    tx: mpsc::Sender<(
-        String,
-        oneshot::Sender<Result<StoredPasswordScram<D>, Error>>,
-    )>,
+    tx: mpsc::Sender<(String, StoredPasswordSender<D>)>,
 }
 
 impl<D> ScramCallback<D> {
-    pub fn new(
-        tx: mpsc::Sender<(
-            String,
-            oneshot::Sender<Result<StoredPasswordScram<D>, Error>>,
-        )>,
-    ) -> Self {
+    pub fn new(tx: mpsc::Sender<(String, StoredPasswordSender<D>)>) -> Self {
         Self { tx }
     }
 }
 
 impl<D> SessionCallback for ScramCallback<D>
 where
-    D: Digest + BlockSizeUser + FixedOutputReset + MechanismDigest + Clone + Send + Sync, // TODO: minimize bounds
+    D: Digest + BlockSizeUser + FixedOutputReset + MechanismDigest + Clone + Send + Sync,
 {
     fn callback(
         &self,
@@ -238,22 +230,19 @@ where
     }
 }
 
-pub struct ScramNegotiator<S, D> {
+pub(super) struct ScramNegotiator<S, D> {
     resolved_domain: String,
     input_tx: mpsc::Sender<Vec<u8>>,
     output_rx: mpsc::Receiver<MechanismNegotiatorResult>,
-    password_lookup_rx: mpsc::Receiver<(
-        String,
-        oneshot::Sender<Result<StoredPasswordScram<D>, Error>>,
-    )>,
+    password_lookup_rx: mpsc::Receiver<(String, StoredPasswordSender<D>)>,
     store: S,
     authenticator: JoinHandle<Result<String, Error>>,
 }
 
 impl<S, D> ScramNegotiator<S, D>
 where
-    S: StoredPasswordLookup + Send + Sync,
-    D: Digest + BlockSizeUser + FixedOutputReset + MechanismDigest + Clone + Send + Sync + 'static, // TODO: minimize bounds
+    S: StoredPasswordLookup,
+    D: Digest + BlockSizeUser + FixedOutputReset + MechanismDigest + Clone + Send + Sync + 'static,
 {
     pub fn new(resolved_domain: String, channel_binding: bool, store: S) -> Result<Self, Error> {
         // TODO: fix channel bounds
