@@ -30,7 +30,7 @@ impl ResourceBindingNegotiator {
         C: Connection,
         P: StreamParser<ReadHalf<C>>,
     {
-        if element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
+        if !element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
             bail!("expected IQ stanza");
         }
 
