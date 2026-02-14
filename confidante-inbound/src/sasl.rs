@@ -116,7 +116,7 @@ impl SaslNegotiator {
 
                     stream.writer().write_xml_element(&xml).await?;
                 }
-                MechanismNegotiatorResult::Success(jid, additional_data) => {
+                MechanismNegotiatorResult::Success(additional_data) => {
                     let mut xml = Element::new("success", Some(namespaces::XMPP_SASL));
                     xml.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
                     if let Some(additional_data) = additional_data {
@@ -124,7 +124,10 @@ impl SaslNegotiator {
                     }
 
                     stream.writer().write_xml_element(&xml).await?;
-                    return Ok(jid);
+                    return negotiator
+                        .authentication_id()
+                        .await
+                        .map(|auth_id| Jid::new(Some(auth_id), "localhost".to_string(), None));
                 }
                 MechanismNegotiatorResult::Failure(_err) => {
                     let mut xml = Element::new("failure", Some(namespaces::XMPP_SASL));
@@ -242,7 +245,7 @@ impl From<Mechanism> for Element {
 
 enum MechanismNegotiatorResult {
     Challenge(Vec<u8>),
-    Success(Jid, Option<Vec<u8>>),
+    Success(Option<Vec<u8>>),
     Failure(Error),
 }
 
