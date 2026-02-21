@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 pub mod namespaces;
 pub mod stream_parser;
@@ -41,7 +41,9 @@ impl Element {
         name: impl AsRef<str>,
         namespace: Option<impl AsRef<str>>,
     ) -> Option<&str> {
-        self.attributes.get(&(name, namespace)).map(|s| s.as_str())
+        let borrowed_key =
+            &(name.as_ref(), namespace.as_ref().map(|s| s.as_ref())) as &dyn AttributeKey;
+        self.attributes.get(borrowed_key).map(|s| s.as_str())
     }
 
     pub fn set_attribute(
@@ -99,6 +101,44 @@ impl Element {
 
     pub fn add_text(&mut self, text: impl Into<String>) {
         self.children.push(Node::Text(text.into()));
+    }
+}
+
+trait AttributeKey {
+    fn as_borrow(&self) -> (&str, Option<&str>);
+}
+
+impl AttributeKey for (&str, Option<&str>) {
+    fn as_borrow(&self) -> (&str, Option<&str>) {
+        (self.0, self.1)
+    }
+}
+
+impl AttributeKey for (String, Option<String>) {
+    fn as_borrow(&self) -> (&str, Option<&str>) {
+        (self.0.as_str(), self.1.as_deref())
+    }
+}
+
+impl<'a> Hash for dyn AttributeKey + 'a {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let (name, namespace) = self.as_borrow();
+        name.hash(state);
+        namespace.hash(state);
+    }
+}
+
+impl<'a> PartialEq for dyn AttributeKey + 'a {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_borrow() == other.as_borrow()
+    }
+}
+
+impl<'a> Eq for dyn AttributeKey + 'a {}
+
+impl<'a> Borrow<dyn AttributeKey + 'a> for (String, Option<String>) {
+    fn borrow(&self) -> &(dyn AttributeKey + 'a) {
+        self
     }
 }
 

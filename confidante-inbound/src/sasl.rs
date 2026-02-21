@@ -92,7 +92,7 @@ impl SaslNegotiator {
             bail!("expected auth element");
         }
 
-        let mechanism = match element.attribute("mechanism", None) {
+        let mechanism = match element.attribute("mechanism", None::<String>) {
             Some(mechanism) => Mechanism::try_from(mechanism).unwrap(),
             None => bail!("auth element is missing mechanism attribute"),
         };

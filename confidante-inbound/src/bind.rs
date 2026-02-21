@@ -34,11 +34,11 @@ impl ResourceBindingNegotiator {
             bail!("expected IQ stanza");
         }
 
-        if element.attribute("type", None) != Some("set") {
+        if element.attribute("type", None::<String>) != Some("set") {
             bail!("IQ stanza is not of type set");
         };
 
-        let Some(request_id) = element.attribute("id", None) else {
+        let Some(request_id) = element.attribute("id", None::<String>) else {
             bail!("IQ stanza does not have an id");
         };
 
