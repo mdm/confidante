@@ -16,7 +16,7 @@ pub struct ResourceBindingNegotiator {
 impl ResourceBindingNegotiator {
     pub fn advertise_feature() -> Element {
         let mut bind = Element::new("bind", Some(namespaces::XMPP_BIND));
-        bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
+        bind.set_attribute("xmlns", None::<String>, namespaces::XMPP_BIND);
 
         bind
     }
@@ -57,12 +57,12 @@ impl ResourceBindingNegotiator {
 
         let bound_entity = entity.bind(resource);
 
-        let mut bind_response = Element::new("iq", None);
-        bind_response.set_attribute("id", None, request_id.to_string());
-        bind_response.set_attribute("type", None, "result".to_string());
+        let mut bind_response = Element::new("iq", None::<String>);
+        bind_response.set_attribute("id", None::<String>, request_id);
+        bind_response.set_attribute("type", None::<String>, "result");
         bind_response.with_child("bind", Some(namespaces::XMPP_BIND), |bind| {
-            bind.set_attribute("xmlns", None, namespaces::XMPP_BIND.to_string());
-            bind.with_child("jid", None, |jid| {
+            bind.set_attribute("xmlns", None::<String>, namespaces::XMPP_BIND);
+            bind.with_child("jid", None::<String>, |jid| {
                 jid.add_text(format!("{}", bound_entity));
             });
         });

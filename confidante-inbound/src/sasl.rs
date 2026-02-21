@@ -73,7 +73,7 @@ impl SaslNegotiator {
             todo!("make sure at least one mechanism is available");
         }
 
-        mechanisms.set_attribute("xmlns", None, namespaces::XMPP_SASL.to_string());
+        mechanisms.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
 
         mechanisms
     }
@@ -107,14 +107,14 @@ impl SaslNegotiator {
                 MechanismNegotiatorResult::Challenge(challenge) => {
                     let challenge = BASE64_STANDARD.encode(challenge);
                     let mut xml = Element::new("challenge", Some(namespaces::XMPP_SASL));
-                    xml.set_attribute("xmlns", None, namespaces::XMPP_SASL.to_string());
+                    xml.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
                     xml.add_text(challenge);
 
                     stream.writer().write_xml_element(&xml).await?;
                 }
                 MechanismNegotiatorResult::Success(jid, additional_data) => {
                     let mut xml = Element::new("success", Some(namespaces::XMPP_SASL));
-                    xml.set_attribute("xmlns", None, namespaces::XMPP_SASL.to_string());
+                    xml.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
                     if let Some(additional_data) = additional_data {
                         xml.add_text(BASE64_STANDARD.encode(additional_data));
                     }
@@ -124,7 +124,7 @@ impl SaslNegotiator {
                 }
                 MechanismNegotiatorResult::Failure(_err) => {
                     let mut xml = Element::new("failure", Some(namespaces::XMPP_SASL));
-                    xml.set_attribute("xmlns", None, namespaces::XMPP_SASL.to_string());
+                    xml.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
                     xml.add_child(Element::new("not-authorized", Some(namespaces::XMPP_SASL)));
 
                     stream.writer().write_xml_element(&xml).await?;
