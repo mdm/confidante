@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{borrow::Borrow, collections::HashMap, hash::Hash};
 
 pub mod namespaces;
 pub mod stream_parser;
@@ -22,36 +22,44 @@ pub struct Element {
 }
 
 impl Element {
-    pub fn new(name: &str, namespace: Option<&str>) -> Self {
+    pub fn new(name: impl Into<String>, namespace: Option<impl Into<String>>) -> Self {
         Self {
-            name: name.to_string(),
-            namespace: namespace.map(|s| s.to_string()),
+            name: name.into(),
+            namespace: namespace.map(|s| s.into()),
             attributes: HashMap::new(),
             children: Vec::new(),
         }
     }
 
-    pub fn validate(&self, name: &str, namespace: Option<&str>) -> bool {
-        self.name == name && self.namespace == namespace.map(|s| s.to_string())
+    pub fn validate(&self, name: impl AsRef<str>, namespace: Option<impl AsRef<str>>) -> bool {
+        self.name == name.as_ref()
+            && self.namespace.as_deref() == namespace.as_ref().map(|s| s.as_ref())
     }
 
-    pub fn attribute(&self, name: &str, namespace: Option<&str>) -> Option<&str> {
+    pub fn attribute(
+        &self,
+        name: impl AsRef<str>,
+        namespace: Option<impl AsRef<str>>,
+    ) -> Option<&str> {
+        let borrowed_key =
+            &(name.as_ref(), namespace.as_ref().map(|s| s.as_ref())) as &dyn AttributeKey;
+        self.attributes.get(borrowed_key).map(|s| s.as_str())
+    }
+
+    pub fn set_attribute(
+        &mut self,
+        name: impl Into<String>,
+        namespace: Option<impl Into<String>>,
+        value: impl Into<String>,
+    ) {
         self.attributes
-            .get(&(name.to_string(), namespace.map(|s| s.to_string())))
-            .map(|s| s.as_str())
-    }
-
-    pub fn set_attribute(&mut self, name: &str, namespace: Option<&str>, value: String) {
-        self.attributes.insert(
-            (name.to_string(), namespace.map(|s| s.to_string())),
-            value.to_string(),
-        );
+            .insert((name.into(), namespace.map(|s| s.into())), value.into());
     }
 
     pub fn find_child(&self, name: &str, namespace: Option<&str>) -> Option<&Element> {
         self.children.iter().find_map(|child| match child {
             Node::Element(element) => {
-                if element.name == name && element.namespace == namespace.map(|s| s.to_string()) {
+                if element.name == name && element.namespace.as_deref() == namespace {
                     Some(element)
                 } else {
                     None
@@ -78,8 +86,12 @@ impl Element {
         self.children.push(Node::Element(element));
     }
 
-    pub fn with_child<F>(&mut self, name: &str, namespace: Option<&str>, f: F)
-    where
+    pub fn with_child<F>(
+        &mut self,
+        name: impl Into<String>,
+        namespace: Option<impl Into<String>>,
+        f: F,
+    ) where
         F: FnOnce(&mut Element),
     {
         let mut element = Element::new(name, namespace);
@@ -87,8 +99,46 @@ impl Element {
         self.children.push(Node::Element(element));
     }
 
-    pub fn add_text(&mut self, text: String) {
-        self.children.push(Node::Text(text));
+    pub fn add_text(&mut self, text: impl Into<String>) {
+        self.children.push(Node::Text(text.into()));
+    }
+}
+
+trait AttributeKey {
+    fn as_borrow(&self) -> (&str, Option<&str>);
+}
+
+impl AttributeKey for (&str, Option<&str>) {
+    fn as_borrow(&self) -> (&str, Option<&str>) {
+        (self.0, self.1)
+    }
+}
+
+impl AttributeKey for (String, Option<String>) {
+    fn as_borrow(&self) -> (&str, Option<&str>) {
+        (self.0.as_str(), self.1.as_deref())
+    }
+}
+
+impl<'a> Hash for dyn AttributeKey + 'a {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let (name, namespace) = self.as_borrow();
+        name.hash(state);
+        namespace.hash(state);
+    }
+}
+
+impl<'a> PartialEq for dyn AttributeKey + 'a {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_borrow() == other.as_borrow()
+    }
+}
+
+impl<'a> Eq for dyn AttributeKey + 'a {}
+
+impl<'a> Borrow<dyn AttributeKey + 'a> for (String, Option<String>) {
+    fn borrow(&self) -> &(dyn AttributeKey + 'a) {
+        self
     }
 }
 
@@ -117,22 +167,25 @@ mod tests {
     #[test]
     fn attribute_simple() {
         let mut element = Element::new("foo", Some("bar"));
-        element.set_attribute("baz", None, "qux".to_string());
-        assert_eq!(element.attribute("baz", None), Some("qux"));
+        element.set_attribute("baz", None::<String>, "qux");
+        assert_eq!(element.attribute("baz", None::<String>), Some("qux"));
     }
 
     #[test]
     fn attribute_missing() {
         let element = Element::new("foo", Some("bar"));
-        assert_eq!(element.attribute("baz", None), None);
+        assert_eq!(element.attribute("baz", None::<String>), None);
     }
 
     #[test]
     fn attribute_overwrite() {
         let mut element = Element::new("foo", Some("bar"));
-        element.set_attribute("baz", None, "qux".to_string());
-        element.set_attribute("baz", None, "overwritten".to_string());
-        assert_eq!(element.attribute("baz", None), Some("overwritten"));
+        element.set_attribute("baz", None::<String>, "qux");
+        element.set_attribute("baz", None::<String>, "overwritten");
+        assert_eq!(
+            element.attribute("baz", None::<String>),
+            Some("overwritten")
+        );
     }
 
     #[test]
@@ -141,10 +194,12 @@ mod tests {
         let child = Element::new("baz", Some("qux"));
         parent.add_child(child);
         assert!(parent.find_child("baz", Some("qux")).is_some());
-        assert!(parent
-            .find_child("baz", Some("qux"))
-            .unwrap()
-            .validate("baz", Some("qux")));
+        assert!(
+            parent
+                .find_child("baz", Some("qux"))
+                .unwrap()
+                .validate("baz", Some("qux"))
+        );
     }
 
     #[test]
@@ -155,10 +210,12 @@ mod tests {
         let child = Element::new("qux", Some("qux"));
         parent.add_child(child);
         assert!(parent.find_child("qux", Some("qux")).is_some());
-        assert!(parent
-            .find_child("qux", Some("qux"))
-            .unwrap()
-            .validate("qux", Some("qux")));
+        assert!(
+            parent
+                .find_child("qux", Some("qux"))
+                .unwrap()
+                .validate("qux", Some("qux"))
+        );
     }
 
     #[test]
@@ -171,14 +228,14 @@ mod tests {
     fn child_helper() {
         let mut parent = Element::new("foo", Some("bar"));
         parent.with_child("baz", Some("qux"), |child| {
-            child.set_attribute("quux", None, "corge".to_string());
+            child.set_attribute("quux", None::<String>, "corge");
         });
         assert!(parent.find_child("baz", Some("qux")).is_some());
         assert_eq!(
             parent
                 .find_child("baz", Some("qux"))
                 .unwrap()
-                .attribute("quux", None),
+                .attribute("quux", None::<String>),
             Some("corge")
         );
     }
@@ -186,17 +243,18 @@ mod tests {
     #[test]
     fn text_simple() {
         let mut element = Element::new("foo", Some("bar"));
-        element.add_text("baz".to_string());
+        element.add_text("baz");
         assert_eq!(element.text(), "baz");
     }
 
+    #[test]
     fn text_nested() {
         let mut parent = Element::new("foo", Some("bar"));
-        parent.add_text("before".to_string());
+        parent.add_text("before");
         parent.with_child("baz", Some("qux"), |child| {
-            child.add_text("inside".to_string());
+            child.add_text("inside");
         });
-        parent.add_text("after".to_string());
+        parent.add_text("after");
         assert_eq!(parent.text(), "beforeinsideafter");
     }
 }

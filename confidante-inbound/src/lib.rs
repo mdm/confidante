@@ -321,8 +321,8 @@ where
             |internal_server_error| {
                 internal_server_error.set_attribute(
                     "xmlns",
-                    None,
-                    namespaces::XMPP_STREAM_ERRORS.to_string(),
+                    None::<String>,
+                    namespaces::XMPP_STREAM_ERRORS,
                 );
             },
         );

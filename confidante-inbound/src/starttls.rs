@@ -13,7 +13,7 @@ pub(super) struct StarttlsNegotiator {
 impl StarttlsNegotiator {
     pub fn advertise_feature() -> Element {
         let mut starttls = Element::new("starttls", Some(namespaces::XMPP_STARTTLS));
-        starttls.set_attribute("xmlns", None, namespaces::XMPP_STARTTLS.to_string());
+        starttls.set_attribute("xmlns", None::<String>, namespaces::XMPP_STARTTLS);
 
         starttls
     }
@@ -31,7 +31,7 @@ impl StarttlsNegotiator {
         }
 
         let mut starttls_proceed = Element::new("proceed", Some(namespaces::XMPP_STARTTLS));
-        starttls_proceed.set_attribute("xmlns", None, namespaces::XMPP_STARTTLS.to_string());
+        starttls_proceed.set_attribute("xmlns", None::<String>, namespaces::XMPP_STARTTLS);
 
         stream.writer().write_xml_element(&starttls_proceed).await?;
         stream.upgrade_to_tls().await?;
