@@ -21,7 +21,7 @@ use confidante_core::{
     },
 };
 
-use crate::sasl::scram::ScramNegotiator;
+use crate::sasl::{plain::PlainNegotiator, scram::ScramNegotiator};
 
 pub use self::plain::StoredPasswordArgon2;
 pub use self::scram::StoredPasswordScram;
@@ -152,6 +152,8 @@ impl SaslNegotiator {
     }
 
     fn mechanism_available(mechanism: &Mechanism, secure: bool, authenticated: bool) -> bool {
+        return matches!(mechanism, Mechanism::Plain);
+
         match mechanism {
             Mechanism::External => secure && authenticated,
             Mechanism::Plain => secure,
@@ -186,7 +188,9 @@ impl Mechanism {
     {
         match self {
             Mechanism::External => todo!(),
-            Mechanism::Plain => todo!(),
+            Mechanism::Plain => {
+                PlainNegotiator::new("localhost".to_string(), store).map(MechanismNegotiator::Plain)
+            }
             Mechanism::ScramSha1 => {
                 ScramNegotiator::<S, Sha1>::new("localhost".to_string(), false, store)
                     .map(MechanismNegotiator::ScramSha1)
@@ -250,7 +254,7 @@ enum MechanismNegotiatorResult {
 
 enum MechanismNegotiator<S> {
     External,
-    Plain,
+    Plain(PlainNegotiator<S>),
     ScramSha1(ScramNegotiator<S, Sha1>),
     ScramSha1Plus(ScramNegotiator<S, Sha1>),
     ScramSha256(ScramNegotiator<S, Sha256>),
@@ -264,7 +268,7 @@ where
     async fn process(&mut self, payload: Vec<u8>) -> MechanismNegotiatorResult {
         match self {
             MechanismNegotiator::External => todo!(),
-            MechanismNegotiator::Plain => todo!(),
+            MechanismNegotiator::Plain(negotiator) => negotiator.process(payload).await,
             MechanismNegotiator::ScramSha1(negotiator) => negotiator.process(payload).await,
             MechanismNegotiator::ScramSha1Plus(negotiator) => negotiator.process(payload).await,
             MechanismNegotiator::ScramSha256(negotiator) => negotiator.process(payload).await,
@@ -275,7 +279,7 @@ where
     async fn authentication_id(self) -> Result<String, Error> {
         match self {
             MechanismNegotiator::External => todo!(),
-            MechanismNegotiator::Plain => todo!(),
+            MechanismNegotiator::Plain(negotiator) => negotiator.authentication_id().await,
             MechanismNegotiator::ScramSha1(negotiator) => negotiator.authentication_id().await,
             MechanismNegotiator::ScramSha1Plus(negotiator) => negotiator.authentication_id().await,
             MechanismNegotiator::ScramSha256(negotiator) => negotiator.authentication_id().await,
