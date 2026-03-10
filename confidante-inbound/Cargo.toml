@@ -10,7 +10,7 @@ anyhow = "1.0.98" # get rid of this dependency. it makes reuse hard
 argon2 = { version = "0.5.3", features = ["std"] }
 base64 = "0.22.1"
 password-hash = "0.5.0"
-rsasl = { version = "2.2.0", default-features = false, features = [
+rsasl = { version = "2.2.1", default-features = false, features = [
   "config_builder",
   "provider",
   "external",
@@ -18,7 +18,7 @@ rsasl = { version = "2.2.0", default-features = false, features = [
   "scram-sha-1",
   "scram-sha-2",
 ] }
-thiserror = "2.0.12"
+thiserror = "2.0.18"
 tokio = { version = "1.44.2", features = ["full"] }
 tokio-rustls = "0.26.2"
 tokio-stream = "0.1.17"
