@@ -77,8 +77,9 @@ impl SessionCallback for PlainCallback {
         }
 
         validate.with::<SaslValidation, _>(|| {
-            let authzid = context.get_ref::<AuthzId>();
-            // .filter(|authzid| !authzid.is_empty());
+            let authzid = context
+                .get_ref::<AuthzId>()
+                .filter(|authzid| !authzid.is_empty());
             let Some(authid) = context.get_ref::<AuthId>() else {
                 return Ok(Err(AuthError::NoSuchUser));
             };

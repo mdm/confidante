@@ -69,7 +69,6 @@ pub fn authenticate(
         let output = match state {
             Ok(State::Running) => MechanismNegotiatorResult::Challenge(server_out.into_inner()),
             Ok(State::Finished(message_sent)) => {
-                // TODO: do AuthError validations use this arm? If yes, return Failure here
                 let additional_data = match message_sent {
                     MessageSent::Yes => Some(server_out.into_inner()),
                     MessageSent::No => None,

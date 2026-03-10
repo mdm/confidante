@@ -50,6 +50,32 @@ pub trait StoredPasswordLookup: Clone + Debug {
     ) -> impl std::future::Future<Output = Result<String, Error>> + Send;
 }
 
+#[derive(Debug, thiserror::Error)]
+enum SaslError {
+    #[error("authentication aborted by client")]
+    Abort,
+    #[error("account disabled by server administrator")]
+    AccountDisabled,
+    #[error("client credentials have expired")]
+    CredentialsExpired,
+    #[error("encryption required for requested authentication mechanism")]
+    EncryptionRequired,
+    #[error("authentication data has invalid encoding")]
+    IncorrectEncoding,
+    #[error("cannot authenticate as the specified authzid")]
+    InvalidAuthzid,
+    #[error("authentication mechanism is invalid")]
+    InvalidMechanism,
+    #[error("malformed authentication request")]
+    MalformedRequest,
+    #[error("authentication mechanism is too weak")]
+    MechanismTooWeak,
+    #[error("could not authenticate with the provided credentials")]
+    NotAuthorized,
+    #[error("temporary authentication failure")]
+    TemporaryAuthFailure,
+}
+
 pub(super) struct SaslNegotiator {
     _private: (),
 }
@@ -123,6 +149,8 @@ impl SaslNegotiator {
                     }
 
                     stream.writer().write_xml_element(&xml).await?;
+                    // TODO: validation must happen before sending "success". validation errors
+                    // must be handled by sending "failure" instead of "success"
                     return negotiator
                         .authentication_id()
                         .await
@@ -163,12 +191,6 @@ impl SaslNegotiator {
             Mechanism::ScramSha256Plus => true,
         }
     }
-}
-
-#[derive(thiserror::Error, Debug)]
-pub(super) enum SaslError {
-    #[error("the SASL mechanism `{0}` is not supported")]
-    UnsupportedMechanism(String),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -212,14 +234,14 @@ impl Mechanism {
 }
 
 impl TryFrom<&str> for Mechanism {
-    type Error = Error;
+    type Error = SaslError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
             "EXTERNAL" => Ok(Mechanism::External),
             "PLAIN" => Ok(Mechanism::Plain),
             "SCRAM-SHA-1" => Ok(Mechanism::ScramSha1),
-            _ => bail!(SaslError::UnsupportedMechanism(value.into())),
+            _ => Err(SaslError::InvalidMechanism),
         }
     }
 }
@@ -244,6 +266,13 @@ impl From<Mechanism> for Element {
 
         element
     }
+}
+
+enum MechanismPolicy {
+    Enabled,
+    EncryptionRequired,
+    TooWeak,
+    Disabled,
 }
 
 enum MechanismNegotiatorResult {
