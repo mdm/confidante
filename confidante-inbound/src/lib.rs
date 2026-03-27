@@ -13,6 +13,7 @@ use confidante_core::xml::{Element, stream_parser::Frame};
 use confidante_core::xmpp::jid::Jid;
 use confidante_core::xmpp::stanza::Stanza;
 use confidante_core::xmpp::stream::Connection;
+use confidante_core::xmpp::stream::StreamError;
 use confidante_core::xmpp::stream::StreamId;
 use confidante_core::xmpp::stream::XmppStream;
 use confidante_core::xmpp::stream_header::LanguageTag;
@@ -330,5 +331,63 @@ where
 
         self.stream.writer().write_xml_element(&error).await?;
         self.stream.writer().write_stream_close().await
+    }
+}
+
+trait FeatureNegotiator {
+    fn advertise_feature(&self, info: &StreamInfo) -> Element;
+    async fn negotiate_feature<C, P>(
+        &self,
+        element: &Element,
+        stream: &mut XmppStream<C, P>,
+        info: &mut StreamInfo,
+    ) -> Result<bool, StreamError>
+    where
+        C: Connection,
+        P: StreamParser<ReadHalf<C>>;
+}
+
+enum AnyFeatureNegotiator<S>
+where
+    S: StoredPasswordLookup + Send + Sync,
+{
+    Starttls(StarttlsNegotiator),
+    Sasl(SaslNegotiator<S>),
+    ResourceBinding(ResourceBindingNegotiator),
+}
+
+impl<S> FeatureNegotiator for AnyFeatureNegotiator<S>
+where
+    S: StoredPasswordLookup + Send + Sync,
+{
+    fn advertise_feature(&self, info: &StreamInfo) -> Element {
+        match self {
+            AnyFeatureNegotiator::Starttls(negotiator) => negotiator.advertise_feature(info),
+            AnyFeatureNegotiator::Sasl(negotiator) => negotiator.advertise_feature(info),
+            AnyFeatureNegotiator::ResourceBinding(negotiator) => negotiator.advertise_feature(info),
+        }
+    }
+
+    async fn negotiate_feature<C, P>(
+        &self,
+        element: &Element,
+        stream: &mut XmppStream<C, P>,
+        info: &mut StreamInfo,
+    ) -> Result<bool, StreamError>
+    where
+        C: Connection,
+        P: StreamParser<ReadHalf<C>>,
+    {
+        match self {
+            AnyFeatureNegotiator::Starttls(negotiator) => {
+                negotiator.negotiate_feature(element, stream, info).await
+            }
+            AnyFeatureNegotiator::Sasl(negotiator) => {
+                negotiator.negotiate_feature(element, stream, info).await
+            }
+            AnyFeatureNegotiator::ResourceBinding(negotiator) => {
+                negotiator.negotiate_feature(element, stream, info).await
+            }
+        }
     }
 }
