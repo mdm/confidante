@@ -79,7 +79,10 @@ impl FeatureNegotiator for ResourceBindingNegotiator {
         };
 
         self.router_management
-            .send(ManagementCommand::Unregister(peer_jid.clone()))
+            .send(ManagementCommand::Register(
+                peer_jid.clone(),
+                self.stanza_tx.clone(),
+            ))
             .await
             .unwrap();
 
