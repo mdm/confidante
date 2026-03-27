@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use anyhow::{Error, bail};
+use anyhow::{Error, anyhow};
 use base64::prelude::*;
 use sha1::Sha1;
 use sha2::Sha256;
@@ -17,11 +17,14 @@ use confidante_core::{
     },
     xmpp::{
         jid::Jid,
-        stream::{Connection, XmppStream},
+        stream::{Connection, StreamError, XmppStream},
     },
 };
 
-use crate::sasl::{plain::PlainNegotiator, scram::ScramNegotiator};
+use crate::{
+    FeatureNegotiator, StreamFeature, StreamInfo,
+    sasl::{plain::PlainNegotiator, scram::ScramNegotiator},
+};
 
 pub use self::plain::StoredPasswordArgon2;
 pub use self::scram::StoredPasswordScram;
@@ -53,7 +56,7 @@ pub trait StoredPasswordLookup: Clone + Debug {
 #[derive(Debug, thiserror::Error)]
 enum SaslError {
     #[error("authentication aborted by client")]
-    Abort,
+    Aborted,
     #[error("account disabled by server administrator")]
     AccountDisabled,
     #[error("client credentials have expired")]
@@ -76,58 +79,132 @@ enum SaslError {
     TemporaryAuthFailure,
 }
 
-pub(super) struct SaslNegotiator {
-    _private: (),
+impl From<SaslError> for Element {
+    fn from(value: SaslError) -> Self {
+        let mut xml = Element::new("failure", Some(namespaces::XMPP_SASL));
+        xml.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
+
+        let name = match value {
+            SaslError::Aborted => "abort",
+            SaslError::AccountDisabled => "account-disabled",
+            SaslError::CredentialsExpired => "credentials-expired",
+            SaslError::EncryptionRequired => "encryption-required",
+            SaslError::IncorrectEncoding => "incorrect-encoding",
+            SaslError::InvalidAuthzid => "invalid-authzid",
+            SaslError::InvalidMechanism => "invalid-mechanism",
+            SaslError::MalformedRequest => "malformed-request",
+            SaslError::MechanismTooWeak => "mechanism-too-weak",
+            SaslError::NotAuthorized => "not-authorized",
+            SaslError::TemporaryAuthFailure => "temporary-auth-failure",
+        };
+
+        xml.add_child(Element::new(name, Some(namespaces::XMPP_SASL)));
+
+        xml
+    }
 }
 
-impl SaslNegotiator {
-    pub fn advertise_feature(secure: bool, authenticated: bool) -> Element {
+pub(super) struct SaslNegotiator<S> {
+    store: S,
+}
+
+impl<S> SaslNegotiator<S> {
+    pub fn new(store: S) -> Self {
+        Self { store }
+    }
+
+    fn mechanism_available(
+        &self,
+        mechanism: &Mechanism,
+        secure: bool,
+        authenticated: bool,
+    ) -> Result<(), SaslError> {
+        if matches!(mechanism, Mechanism::Plain | Mechanism::ScramSha1) {
+            return Ok(());
+        } else {
+            return Err(SaslError::InvalidMechanism);
+        }
+
+        // match mechanism {
+        //     Mechanism::External => secure && authenticated,
+        //     Mechanism::Plain => secure,
+        //     Mechanism::ScramSha1 => true,
+        //     Mechanism::ScramSha1Plus => true,
+        //     Mechanism::ScramSha256 => true,
+        //     Mechanism::ScramSha256Plus => true,
+        // }
+    }
+}
+
+impl<S> FeatureNegotiator for SaslNegotiator<S>
+where
+    S: StoredPasswordLookup + Send + Sync,
+{
+    fn advertise_feature(&self, info: &StreamInfo) -> Element {
         let mut mechanisms = Element::new("mechanisms", Some(namespaces::XMPP_SASL));
 
-        let mut no_mechanisms = true;
-        if Self::mechanism_available(&Mechanism::External, secure, authenticated) {
-            mechanisms.add_child(Mechanism::External.into());
-            no_mechanisms = false;
-        }
-        if Self::mechanism_available(&Mechanism::ScramSha1, secure, authenticated) {
-            mechanisms.add_child(Mechanism::ScramSha1.into());
-            no_mechanisms = false;
-        }
-        if Self::mechanism_available(&Mechanism::Plain, secure, authenticated) {
-            mechanisms.add_child(Mechanism::Plain.into());
-            no_mechanisms = false;
-        }
-
-        if no_mechanisms {
-            todo!("make sure at least one mechanism is available");
-        }
+        // TODO: make mechanisms available based on configured policy
+        mechanisms.add_child(Mechanism::ScramSha1.into());
+        mechanisms.add_child(Mechanism::Plain.into());
 
         mechanisms.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
 
         mechanisms
     }
 
-    pub async fn negotiate_feature<C, P, S>(
-        stream: &mut XmppStream<C, P>,
+    async fn negotiate_feature<C, P>(
+        &self,
         element: &Element,
-        store: S,
-    ) -> Result<Jid, Error>
+        stream: &mut XmppStream<C, P>,
+        info: &mut StreamInfo,
+    ) -> Result<bool, StreamError>
     where
         C: Connection,
         P: StreamParser<ReadHalf<C>>,
-        S: StoredPasswordLookup + Send + Sync,
     {
         if !element.validate("auth", Some(namespaces::XMPP_SASL)) {
-            bail!("expected auth element");
+            return Ok(false);
         }
 
         let mechanism = match element.attribute("mechanism", None::<String>) {
-            Some(mechanism) => Mechanism::try_from(mechanism).unwrap(),
-            None => bail!("auth element is missing mechanism attribute"),
+            Some(mechanism) => match Mechanism::try_from(mechanism) {
+                Ok(mechanism) => mechanism,
+                Err(_) => {
+                    stream
+                        .writer()
+                        .write_xml_element(&SaslError::InvalidMechanism.into())
+                        .await?;
+
+                    return Ok(false);
+                }
+            },
+            None => {
+                stream
+                    .writer()
+                    .write_xml_element(&SaslError::InvalidMechanism.into())
+                    .await?;
+
+                return Ok(false);
+            }
         };
 
-        let mut negotiator = mechanism.negotiator(store)?;
-        let mut response_payload = BASE64_STANDARD.decode(element.text()).unwrap();
+        if let Err(error) =
+            self.mechanism_available(&mechanism, stream.is_secure(), stream.is_authenticated())
+        {
+            stream.writer().write_xml_element(&error.into()).await?;
+
+            return Ok(false);
+        }
+
+        let mut negotiator = mechanism.negotiator(self.store.clone())?;
+        let Ok(mut response_payload) = BASE64_STANDARD.decode(element.text()) else {
+            stream
+                .writer()
+                .write_xml_element(&SaslError::IncorrectEncoding.into())
+                .await?;
+
+            return Ok(false);
+        };
 
         loop {
             let result = negotiator.process(response_payload).await;
@@ -142,6 +219,27 @@ impl SaslNegotiator {
                     stream.writer().write_xml_element(&xml).await?;
                 }
                 MechanismNegotiatorResult::Success(additional_data) => {
+                    let authzid = match negotiator.authorization_id().await {
+                        Ok(authzid) => authzid,
+                        Err(_) => {
+                            // TODO: distinguish between different error cases and send appropriate failure responses
+                            stream
+                                .writer()
+                                .write_xml_element(&SaslError::NotAuthorized.into())
+                                .await?;
+
+                            return Ok(false);
+                        }
+                    };
+
+                    let Some(peer_jid) = info.peer_jid.take() else {
+                        // This should never happen. Peer JID should have been set during virtual host resolution.
+                        return Err(anyhow!("JID was not set before authentication").into());
+                    };
+
+                    info.peer_jid = Some(peer_jid.with_local(Some(authzid)));
+                    info.features.insert(StreamFeature::Authentication);
+
                     let mut xml = Element::new("success", Some(namespaces::XMPP_SASL));
                     xml.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
                     if let Some(additional_data) = additional_data {
@@ -149,12 +247,8 @@ impl SaslNegotiator {
                     }
 
                     stream.writer().write_xml_element(&xml).await?;
-                    // TODO: validation must happen before sending "success". validation errors
-                    // must be handled by sending "failure" instead of "success"
-                    return negotiator
-                        .authentication_id()
-                        .await
-                        .map(|auth_id| Jid::new(Some(auth_id), "localhost".to_string(), None));
+
+                    return Ok(true);
                 }
                 MechanismNegotiatorResult::Failure(_err) => {
                     let mut xml = Element::new("failure", Some(namespaces::XMPP_SASL));
@@ -166,29 +260,32 @@ impl SaslNegotiator {
             }
 
             let Some(Ok(Frame::XmlFragment(response))) = stream.reader().next().await else {
-                bail!("expected xml fragment");
+                // TODO: handle end of stream and stream errors
+                return Err(anyhow!("expected xml fragment").into());
             };
 
             if response.validate("response", Some(namespaces::XMPP_SASL)) {
-                response_payload = BASE64_STANDARD.decode(response.text()).unwrap();
-            } else if response.validate("abort", Some(namespaces::XMPP_SASL)) {
-                bail!("authentication aborted");
+                response_payload = match BASE64_STANDARD.decode(response.text()) {
+                    Ok(payload) => payload,
+                    Err(_) => {
+                        stream
+                            .writer()
+                            .write_xml_element(&SaslError::IncorrectEncoding.into())
+                            .await?;
+
+                        return Ok(false);
+                    }
+                };
             } else {
-                bail!("unexpected element");
+                if response.validate("abort", Some(namespaces::XMPP_SASL)) {
+                    stream
+                        .writer()
+                        .write_xml_element(&SaslError::Aborted.into())
+                        .await?;
+                }
+
+                return Ok(false);
             }
-        }
-    }
-
-    fn mechanism_available(mechanism: &Mechanism, secure: bool, authenticated: bool) -> bool {
-        return matches!(mechanism, Mechanism::Plain);
-
-        match mechanism {
-            Mechanism::External => secure && authenticated,
-            Mechanism::Plain => secure,
-            Mechanism::ScramSha1 => true,
-            Mechanism::ScramSha1Plus => true,
-            Mechanism::ScramSha256 => true,
-            Mechanism::ScramSha256Plus => true,
         }
     }
 }
@@ -305,16 +402,14 @@ where
         }
     }
 
-    async fn authentication_id(self) -> Result<String, Error> {
+    async fn authorization_id(self) -> Result<String, Error> {
         match self {
             MechanismNegotiator::External => todo!(),
-            MechanismNegotiator::Plain(negotiator) => negotiator.authentication_id().await,
-            MechanismNegotiator::ScramSha1(negotiator) => negotiator.authentication_id().await,
-            MechanismNegotiator::ScramSha1Plus(negotiator) => negotiator.authentication_id().await,
-            MechanismNegotiator::ScramSha256(negotiator) => negotiator.authentication_id().await,
-            MechanismNegotiator::ScramSha256Plus(negotiator) => {
-                negotiator.authentication_id().await
-            }
+            MechanismNegotiator::Plain(negotiator) => negotiator.authorization_id().await,
+            MechanismNegotiator::ScramSha1(negotiator) => negotiator.authorization_id().await,
+            MechanismNegotiator::ScramSha1Plus(negotiator) => negotiator.authorization_id().await,
+            MechanismNegotiator::ScramSha256(negotiator) => negotiator.authorization_id().await,
+            MechanismNegotiator::ScramSha256Plus(negotiator) => negotiator.authorization_id().await,
         }
     }
 }

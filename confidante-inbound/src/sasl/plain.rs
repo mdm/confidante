@@ -171,7 +171,7 @@ where
         }
     }
 
-    pub async fn authentication_id(self) -> Result<String, Error> {
+    pub async fn authorization_id(self) -> Result<String, Error> {
         self.authenticator.await?
     }
 }
