@@ -1,49 +1,66 @@
-use anyhow::{Error, bail};
-use tokio::io::ReadHalf;
+use anyhow::anyhow;
+use confidante_services::router::ManagementCommand;
+use tokio::{io::ReadHalf, sync::mpsc};
 
 use confidante_core::{
     xml::{Element, namespaces, stream_parser::StreamParser},
     xmpp::{
-        jid::Jid,
-        stream::{Connection, XmppStream},
+        stanza::Stanza,
+        stream::{Connection, StreamError, XmppStream},
     },
 };
 
+use crate::{FeatureNegotiator, StreamFeature, StreamInfo};
+
 pub struct ResourceBindingNegotiator {
-    _private: (),
+    router_management: mpsc::Sender<ManagementCommand>,
+    stanza_tx: mpsc::Sender<Stanza>,
 }
 
 impl ResourceBindingNegotiator {
-    pub fn advertise_feature() -> Element {
+    pub fn new(
+        router_management: mpsc::Sender<ManagementCommand>,
+        stanza_tx: mpsc::Sender<Stanza>,
+    ) -> Self {
+        Self {
+            router_management,
+            stanza_tx,
+        }
+    }
+}
+
+impl FeatureNegotiator for ResourceBindingNegotiator {
+    fn advertise_feature(&self, info: &StreamInfo) -> Element {
         let mut bind = Element::new("bind", Some(namespaces::XMPP_BIND));
         bind.set_attribute("xmlns", None::<String>, namespaces::XMPP_BIND);
 
         bind
     }
 
-    pub async fn negotiate_feature<C, P>(
-        stream: &mut XmppStream<C, P>,
+    async fn negotiate_feature<C, P>(
+        &self,
         element: &Element,
-        entity: &Option<Jid>,
-    ) -> Result<Jid, Error>
+        stream: &mut XmppStream<C, P>,
+        info: &mut StreamInfo,
+    ) -> Result<bool, StreamError>
     where
         C: Connection,
         P: StreamParser<ReadHalf<C>>,
     {
         if !element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
-            bail!("expected IQ stanza");
+            return Ok(false);
         }
 
         if element.attribute("type", None::<String>) != Some("set") {
-            bail!("IQ stanza is not of type set");
+            return Ok(false);
         };
 
         let Some(request_id) = element.attribute("id", None::<String>) else {
-            bail!("IQ stanza does not have an id");
+            return Ok(false);
         };
 
         let Some(bind_request) = element.find_child("bind", Some(namespaces::XMPP_BIND)) else {
-            bail!("IQ stanza does not contain a bind request");
+            return Ok(false);
         };
 
         let resource = match bind_request.find_child("resource", Some(namespaces::XMPP_BIND)) {
@@ -51,11 +68,20 @@ impl ResourceBindingNegotiator {
             None => uuid::Uuid::new_v4().to_string(),
         };
 
-        let Some(entity) = entity else {
-            bail!("entity to bind is unknown");
+        info.peer_jid = info
+            .peer_jid
+            .as_ref()
+            .map(|jid| jid.with_resource(Some(resource)));
+
+        let Some(peer_jid) = &info.peer_jid else {
+            // This should never happen. Peer JID should have been set during authentication.
+            return Err(anyhow!("JID was not set before resource binding").into());
         };
 
-        let bound_entity = entity.bind(resource);
+        self.router_management
+            .send(ManagementCommand::Unregister(peer_jid.clone()))
+            .await
+            .unwrap();
 
         let mut bind_response = Element::new("iq", None::<String>);
         bind_response.set_attribute("id", None::<String>, request_id);
@@ -63,12 +89,14 @@ impl ResourceBindingNegotiator {
         bind_response.with_child("bind", Some(namespaces::XMPP_BIND), |bind| {
             bind.set_attribute("xmlns", None::<String>, namespaces::XMPP_BIND);
             bind.with_child("jid", None::<String>, |jid| {
-                jid.add_text(format!("{}", bound_entity));
+                jid.add_text(format!("{}", peer_jid));
             });
         });
 
         stream.writer().write_xml_element(&bind_response).await?;
 
-        Ok(bound_entity)
+        info.features.insert(StreamFeature::ResourceBinding);
+
+        Ok(true)
     }
 }
