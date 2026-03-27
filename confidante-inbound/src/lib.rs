@@ -38,8 +38,8 @@ pub enum ConnectionType {
     Server,
 }
 
-#[derive(Debug, Hash, Eq, PartialEq)]
-enum StreamFeatures {
+#[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
+enum StreamFeature {
     Tls,
     Authentication,
     ResourceBinding,
@@ -51,7 +51,7 @@ struct StreamInfo {
     peer_jid: Option<Jid>,
     peer_language: Option<LanguageTag>,
     connection_type: Option<ConnectionType>,
-    features: HashSet<StreamFeatures>,
+    features: HashSet<StreamFeature>,
 }
 
 impl Default for StreamInfo {
