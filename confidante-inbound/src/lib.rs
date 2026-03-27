@@ -255,17 +255,15 @@ where
     }
 
     async fn advertise_features(&mut self) -> Result<(), Error> {
+        let negotiable_features = self.negotiable_features();
+
+        if negotiable_features.is_empty() {
+            return Ok(());
+        }
+
         let mut features = Element::new("features", Some(namespaces::XMPP_STREAMS));
-        for feature in self.negotiable_features() {
-            let feature = match feature {
-                StreamFeatures::Tls => StarttlsNegotiator::advertise_feature(),
-                StreamFeatures::Authentication => SaslNegotiator::advertise_feature(
-                    self.stream.is_secure(),
-                    self.stream.is_authenticated(),
-                ),
-                StreamFeatures::ResourceBinding => ResourceBindingNegotiator::advertise_feature(),
-            };
-            features.add_child(feature);
+        for feature in negotiable_features {
+            features.add_child(feature.advertise_feature(&self.info));
         }
 
         self.stream.writer().write_xml_element(&features).await
