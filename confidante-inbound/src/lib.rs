@@ -290,7 +290,10 @@ where
             bail!("expected stream header");
         };
 
-        self.info.jid = inbound_header.to;
+        self.info.jid = inbound_header.to; // TODO: make sure this only contains the domain part
+        if let ConnectionType::Client = self.settings.connection_type {
+            self.info.peer_jid = self.info.jid.clone();
+        }
         self.info.peer_language = inbound_header.language;
         self.info.connection_type = Some(self.settings.connection_type);
 
