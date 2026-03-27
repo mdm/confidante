@@ -57,11 +57,19 @@ impl Jid {
         }
     }
 
-    pub fn bind(&self, resource: String) -> Self {
+    pub fn with_local(&self, local: Option<String>) -> Self {
+        Jid {
+            local: local.map(LocalPart),
+            domain: self.domain.clone(),
+            resource: self.resource.clone(),
+        }
+    }
+
+    pub fn with_resource(&self, resource: Option<String>) -> Self {
         Jid {
             local: self.local.clone(),
             domain: self.domain.clone(),
-            resource: Some(ResourcePart(resource)),
+            resource: resource.map(ResourcePart),
         }
     }
 }
