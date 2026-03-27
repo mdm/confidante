@@ -126,6 +126,60 @@ where
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum StreamError {
+    #[error("Stream error: Bad format")]
+    BadFormat,
+    #[error("Stream error: Bad namespace prefix")]
+    BadNamespacePrefix,
+    #[error("Stream error: Conflict")]
+    Conflict,
+    #[error("Stream error: Connection timeout")]
+    ConnectionTimeout,
+    #[error("Stream error: Host gone")]
+    HostGone,
+    #[error("Stream error: Host unknown")]
+    HostUnknown,
+    #[error("Stream error: Improper addressing")]
+    ImproperAddressing,
+    #[error(transparent)]
+    InternalServerError(#[from] anyhow::Error),
+    #[error("Stream error: Invalid from")]
+    InvalidFrom,
+    #[error("Stream error: Invalid namespace")]
+    InvalidNamespace,
+    #[error("Stream error: Invalid XML")]
+    InvalidXml,
+    #[error("Stream error: Not authorized")]
+    NotAuthorized,
+    #[error("Stream error: Not well-formed")]
+    NotWellFormed,
+    #[error("Stream error: Policy violation")]
+    PolicyViolation,
+    #[error("Stream error: Remote connection failed")]
+    RemoteConnectionFailed,
+    #[error("Stream error: Reset")]
+    Reset,
+    #[error("Stream error: Resource constraint")]
+    ResourceConstraint,
+    #[error("Stream error: Restricted XML")]
+    RestrictedXml,
+    #[error("Stream error: See other host")]
+    SeeOtherHost,
+    #[error("Stream error: System shutdown")]
+    SystemShutdown,
+    #[error("Stream error: Undefined condition")]
+    UndefinedCondition,
+    #[error("Stream error: Unsupported encoding")]
+    UnsupportedEncoding,
+    #[error("Stream error: Unsupported feature")]
+    UnsupportedFeature,
+    #[error("Stream error: Unsupported stanza type")]
+    UnsupportedStanzaType,
+    #[error("Stream error: Unsupported version")]
+    UnsupportedVersion,
+}
+
 #[cfg(test)]
 mod tests {
     use crate::xml::stream_parser::rusty_xml::RustyXmlStreamParser;
