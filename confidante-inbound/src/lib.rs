@@ -149,12 +149,28 @@ where
 
     async fn process_element(&mut self, element: Element) -> Result<(), Error> {
         for feature in self.negotiable_features() {
-            if let Ok(()) = dbg!(self.negotiate_feature(feature, &element).await) {
+            if let Ok(true) = dbg!(
+                feature
+                    .negotiate_feature(&element, &mut self.stream, &mut self.info)
+                    .await
+            ) {
+                if matches!(
+                    feature,
+                    AnyFeatureNegotiator::Starttls(_) | AnyFeatureNegotiator::Sasl(_)
+                ) {
+                    // TODO: move reset decision into negotiator
+                    self.stream.reset();
+                    self.exchange_stream_headers().await?;
+                }
+
+                self.advertise_features().await?;
+
                 return Ok(());
             }
         }
 
-        // element must be a stanza at this point
+        // TODO: handle unexpected non-stanza elements
+        // TODO: don't route stanzas until allowed by features
         self.router
             .stanzas
             .send(Stanza { element })
@@ -162,76 +178,37 @@ where
             .map_err(|_| anyhow!("failed to route stanza"))
     }
 
-    fn negotiable_features(&self) -> Vec<StreamFeatures> {
+    fn negotiable_features(&self) -> Vec<AnyFeatureNegotiator<S>> {
         let mut features = vec![];
 
-        if self.stream.is_starttls_allowed() && !self.info.features.contains(&StreamFeatures::Tls) {
-            features.push(StreamFeatures::Tls);
+        // TODO: hold on to these throughout negotiation
+        // TODO: move logic into negotiators?
+
+        if self.stream.is_starttls_allowed() && !self.info.features.contains(&StreamFeature::Tls) {
+            features.push(AnyFeatureNegotiator::Starttls(StarttlsNegotiator::new()));
         }
 
-        if (!self.settings.tls_required || self.info.features.contains(&StreamFeatures::Tls))
-            && !self.info.features.contains(&StreamFeatures::Authentication)
+        if (!self.settings.tls_required || self.info.features.contains(&StreamFeature::Tls))
+            && !self.info.features.contains(&StreamFeature::Authentication)
         {
-            features.push(StreamFeatures::Authentication);
+            features.push(AnyFeatureNegotiator::Sasl(SaslNegotiator::new(
+                self.store.clone(),
+            )));
         }
 
         if let Some(ConnectionType::Client) = self.info.connection_type
-            && self.info.features.contains(&StreamFeatures::Authentication)
-            && !self
-                .info
-                .features
-                .contains(&StreamFeatures::ResourceBinding)
+            && self.info.features.contains(&StreamFeature::Authentication)
+            && !self.info.features.contains(&StreamFeature::ResourceBinding)
         {
-            features.push(StreamFeatures::ResourceBinding);
+            features.push(AnyFeatureNegotiator::ResourceBinding(
+                ResourceBindingNegotiator::new(
+                    self.router.management.clone(),
+                    self.stanza_tx.clone(),
+                ),
+            ));
         }
 
         features
-    }
-
-    async fn negotiate_feature(
-        &mut self,
-        feature: StreamFeatures,
-        element: &Element,
-    ) -> Result<(), Error> {
-        match feature {
-            StreamFeatures::Tls => {
-                StarttlsNegotiator::negotiate_feature(&mut self.stream, element).await?;
-                self.info.features.insert(StreamFeatures::Tls);
-                self.stream.reset();
-                self.exchange_stream_headers().await?;
-                self.advertise_features().await?;
-            }
-            StreamFeatures::Authentication => {
-                let peer_jid = Some(
-                    SaslNegotiator::negotiate_feature(
-                        &mut self.stream,
-                        element,
-                        self.store.clone(),
-                    )
-                    .await?,
-                );
-                dbg!(&peer_jid);
-                self.register_peer_jid(peer_jid).await;
-                self.info.features.insert(StreamFeatures::Authentication);
-                self.stream.reset();
-                self.exchange_stream_headers().await?;
-                self.advertise_features().await?;
-            }
-            StreamFeatures::ResourceBinding => {
-                let peer_jid = Some(
-                    ResourceBindingNegotiator::negotiate_feature(
-                        &mut self.stream,
-                        element,
-                        &self.info.peer_jid,
-                    )
-                    .await?,
-                );
-                self.register_peer_jid(peer_jid).await;
-                self.info.features.insert(StreamFeatures::ResourceBinding);
-            }
-        }
-
-        Ok(())
     }
 
     async fn register_peer_jid(&mut self, peer_jid: Option<Jid>) {
