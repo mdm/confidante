@@ -26,3 +26,4 @@ uuid = { version = "1.16.0", features = ["v4"] }
 sha2 = "0.10.9"
 digest = "0.10.7"
 sha1 = "0.10.6"
+async-trait = "0.1.89"

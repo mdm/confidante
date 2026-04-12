@@ -17,7 +17,12 @@ impl StarttlsNegotiator {
     }
 }
 
-impl FeatureNegotiator for StarttlsNegotiator {
+#[async_trait::async_trait]
+impl<C, P> FeatureNegotiator<C, P> for StarttlsNegotiator
+where
+    C: Connection + Send,
+    P: StreamParser<ReadHalf<C>> + Send,
+{
     fn advertise_feature(&self, _info: &StreamInfo) -> Element {
         let mut starttls = Element::new("starttls", Some(namespaces::XMPP_STARTTLS));
         starttls.set_attribute("xmlns", None::<String>, namespaces::XMPP_STARTTLS);
@@ -25,16 +30,12 @@ impl FeatureNegotiator for StarttlsNegotiator {
         starttls
     }
 
-    async fn negotiate_feature<C, P>(
+    async fn negotiate_feature(
         &self,
         element: &Element,
         stream: &mut XmppStream<C, P>,
         info: &mut StreamInfo,
-    ) -> Result<bool, StreamError>
-    where
-        C: Connection,
-        P: StreamParser<ReadHalf<C>>,
-    {
+    ) -> Result<bool, StreamError> {
         if !element.validate("starttls", Some(namespaces::XMPP_STARTTLS)) {
             return Ok(false);
         }

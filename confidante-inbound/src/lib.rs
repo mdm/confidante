@@ -1,6 +1,9 @@
 use std::collections::HashSet;
+use std::pin::Pin;
 
 use anyhow::{Error, anyhow, bail};
+use argon2::Block;
+use base64::write;
 use sasl::StoredPasswordLookup;
 use tokio::io::ReadHalf;
 use tokio::select;
@@ -75,8 +78,8 @@ pub struct InboundStreamSettings {
 
 pub struct InboundStream<C, P, S>
 where
-    C: Connection,
-    P: StreamParser<ReadHalf<C>>,
+    C: Connection + Send,
+    P: StreamParser<ReadHalf<C>> + Send,
     S: StoredPasswordLookup + Send + Sync,
 {
     stream: XmppStream<C, P>,
@@ -90,9 +93,9 @@ where
 
 impl<C, P, S> InboundStream<C, P, S>
 where
-    C: Connection,
-    P: StreamParser<ReadHalf<C>>,
-    S: StoredPasswordLookup + Send + Sync,
+    C: Connection + Send,
+    P: StreamParser<ReadHalf<C>> + Send,
+    S: StoredPasswordLookup + Send + Sync + 'static,
 {
     pub fn new(
         connection: C,
@@ -154,10 +157,7 @@ where
                     .negotiate_feature(&element, &mut self.stream, &mut self.info)
                     .await
             ) {
-                if matches!(
-                    feature,
-                    AnyFeatureNegotiator::Starttls(_) | AnyFeatureNegotiator::Sasl(_)
-                ) {
+                if true {
                     // TODO: move reset decision into negotiator
                     self.stream.reset();
                     self.exchange_stream_headers().await?;
@@ -178,34 +178,30 @@ where
             .map_err(|_| anyhow!("failed to route stanza"))
     }
 
-    fn negotiable_features(&self) -> Vec<AnyFeatureNegotiator<S>> {
-        let mut features = vec![];
+    fn negotiable_features(&self) -> Vec<Box<dyn FeatureNegotiator<C, P> + Send>> {
+        let mut features: Vec<Box<dyn FeatureNegotiator<C, P> + Send>> = vec![];
 
         // TODO: hold on to these throughout negotiation
         // TODO: move logic into negotiators?
 
         if self.stream.is_starttls_allowed() && !self.info.features.contains(&StreamFeature::Tls) {
-            features.push(AnyFeatureNegotiator::Starttls(StarttlsNegotiator::new()));
+            features.push(Box::new(StarttlsNegotiator::new()));
         }
 
         if (!self.settings.tls_required || self.info.features.contains(&StreamFeature::Tls))
             && !self.info.features.contains(&StreamFeature::Authentication)
         {
-            features.push(AnyFeatureNegotiator::Sasl(SaslNegotiator::new(
-                self.store.clone(),
-            )));
+            features.push(Box::new(SaslNegotiator::new(self.store.clone())));
         }
 
         if let Some(ConnectionType::Client) = self.info.connection_type
             && self.info.features.contains(&StreamFeature::Authentication)
             && !self.info.features.contains(&StreamFeature::ResourceBinding)
         {
-            features.push(AnyFeatureNegotiator::ResourceBinding(
-                ResourceBindingNegotiator::new(
-                    self.router.management.clone(),
-                    self.stanza_tx.clone(),
-                ),
-            ));
+            features.push(Box::new(ResourceBindingNegotiator::new(
+                self.router.management.clone(),
+                self.stanza_tx.clone(),
+            )));
         }
 
         features
@@ -312,60 +308,17 @@ where
     }
 }
 
-trait FeatureNegotiator {
+#[async_trait::async_trait]
+trait FeatureNegotiator<C, P>
+where
+    C: Connection + Send,
+    P: StreamParser<ReadHalf<C>> + Send,
+{
     fn advertise_feature(&self, info: &StreamInfo) -> Element;
-    async fn negotiate_feature<C, P>(
+    async fn negotiate_feature(
         &self,
         element: &Element,
         stream: &mut XmppStream<C, P>,
         info: &mut StreamInfo,
-    ) -> Result<bool, StreamError>
-    where
-        C: Connection,
-        P: StreamParser<ReadHalf<C>>;
-}
-
-enum AnyFeatureNegotiator<S>
-where
-    S: StoredPasswordLookup + Send + Sync,
-{
-    Starttls(StarttlsNegotiator),
-    Sasl(SaslNegotiator<S>),
-    ResourceBinding(ResourceBindingNegotiator),
-}
-
-impl<S> FeatureNegotiator for AnyFeatureNegotiator<S>
-where
-    S: StoredPasswordLookup + Send + Sync,
-{
-    fn advertise_feature(&self, info: &StreamInfo) -> Element {
-        match self {
-            AnyFeatureNegotiator::Starttls(negotiator) => negotiator.advertise_feature(info),
-            AnyFeatureNegotiator::Sasl(negotiator) => negotiator.advertise_feature(info),
-            AnyFeatureNegotiator::ResourceBinding(negotiator) => negotiator.advertise_feature(info),
-        }
-    }
-
-    async fn negotiate_feature<C, P>(
-        &self,
-        element: &Element,
-        stream: &mut XmppStream<C, P>,
-        info: &mut StreamInfo,
-    ) -> Result<bool, StreamError>
-    where
-        C: Connection,
-        P: StreamParser<ReadHalf<C>>,
-    {
-        match self {
-            AnyFeatureNegotiator::Starttls(negotiator) => {
-                negotiator.negotiate_feature(element, stream, info).await
-            }
-            AnyFeatureNegotiator::Sasl(negotiator) => {
-                negotiator.negotiate_feature(element, stream, info).await
-            }
-            AnyFeatureNegotiator::ResourceBinding(negotiator) => {
-                negotiator.negotiate_feature(element, stream, info).await
-            }
-        }
-    }
+    ) -> Result<bool, StreamError>;
 }

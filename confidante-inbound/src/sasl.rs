@@ -136,8 +136,11 @@ impl<S> SaslNegotiator<S> {
     }
 }
 
-impl<S> FeatureNegotiator for SaslNegotiator<S>
+#[async_trait::async_trait]
+impl<C, P, S> FeatureNegotiator<C, P> for SaslNegotiator<S>
 where
+    C: Connection + Send,
+    P: StreamParser<ReadHalf<C>> + Send,
     S: StoredPasswordLookup + Send + Sync,
 {
     fn advertise_feature(&self, info: &StreamInfo) -> Element {
@@ -152,16 +155,12 @@ where
         mechanisms
     }
 
-    async fn negotiate_feature<C, P>(
+    async fn negotiate_feature(
         &self,
         element: &Element,
         stream: &mut XmppStream<C, P>,
         info: &mut StreamInfo,
-    ) -> Result<bool, StreamError>
-    where
-        C: Connection,
-        P: StreamParser<ReadHalf<C>>,
-    {
+    ) -> Result<bool, StreamError> {
         if !element.validate("auth", Some(namespaces::XMPP_SASL)) {
             return Ok(false);
         }

@@ -29,7 +29,12 @@ impl ResourceBindingNegotiator {
     }
 }
 
-impl FeatureNegotiator for ResourceBindingNegotiator {
+#[async_trait::async_trait]
+impl<C, P> FeatureNegotiator<C, P> for ResourceBindingNegotiator
+where
+    C: Connection + Send,
+    P: StreamParser<ReadHalf<C>> + Send,
+{
     fn advertise_feature(&self, info: &StreamInfo) -> Element {
         let mut bind = Element::new("bind", Some(namespaces::XMPP_BIND));
         bind.set_attribute("xmlns", None::<String>, namespaces::XMPP_BIND);
@@ -37,16 +42,12 @@ impl FeatureNegotiator for ResourceBindingNegotiator {
         bind
     }
 
-    async fn negotiate_feature<C, P>(
+    async fn negotiate_feature(
         &self,
         element: &Element,
         stream: &mut XmppStream<C, P>,
         info: &mut StreamInfo,
-    ) -> Result<bool, StreamError>
-    where
-        C: Connection,
-        P: StreamParser<ReadHalf<C>>,
-    {
+    ) -> Result<bool, StreamError> {
         if !element.validate("iq", Some(namespaces::XMPP_CLIENT)) {
             return Ok(false);
         }
