@@ -103,4 +103,8 @@ where
 
         Ok(true)
     }
+
+    fn requires_restart(&self) -> bool {
+        false
+    }
 }

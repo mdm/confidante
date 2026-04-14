@@ -157,8 +157,7 @@ where
                     .negotiate_feature(&element, &mut self.stream, &mut self.info)
                     .await
             ) {
-                if true {
-                    // TODO: move reset decision into negotiator
+                if feature.requires_restart() {
                     self.stream.reset();
                     self.exchange_stream_headers().await?;
                 }
@@ -321,4 +320,5 @@ where
         stream: &mut XmppStream<C, P>,
         info: &mut StreamInfo,
     ) -> Result<bool, StreamError>;
+    fn requires_restart(&self) -> bool;
 }

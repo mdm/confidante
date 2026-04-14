@@ -287,6 +287,10 @@ where
             }
         }
     }
+
+    fn requires_restart(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
