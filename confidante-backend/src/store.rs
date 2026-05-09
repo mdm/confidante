@@ -270,7 +270,7 @@ pub trait StoreBackend {
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use std::default::Default;
 
     use self::fake::FakeStoreBackend;

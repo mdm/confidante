@@ -7,7 +7,7 @@ use confidante_core::{
 
 use crate::{FeatureNegotiator, StreamFeature, StreamInfo};
 
-pub(super) struct StarttlsNegotiator {
+pub struct StarttlsNegotiator {
     _private: (),
 }
 
@@ -23,11 +23,11 @@ where
     C: Connection + Send,
     P: StreamParser<ReadHalf<C>> + Send,
 {
-    fn advertise_feature(&self, _info: &StreamInfo) -> Element {
+    fn advertise_feature(&self, _info: &StreamInfo) -> Option<Element> {
         let mut starttls = Element::new("starttls", Some(namespaces::XMPP_STARTTLS));
         starttls.set_attribute("xmlns", None::<String>, namespaces::XMPP_STARTTLS);
 
-        starttls
+        Some(starttls)
     }
 
     async fn negotiate_feature(

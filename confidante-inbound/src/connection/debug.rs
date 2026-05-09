@@ -9,7 +9,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use uuid::Uuid;
 
 use confidante_core::utils::recorder::StreamRecorder;
-use confidante_core::xmpp::stream::Connection;
+use confidante_core::xmpp::stream::{Connection, ConnectionType};
 
 pub struct DebugConnection<C>
 where
@@ -41,6 +41,10 @@ where
     C::Upgrade: Future<Output = Result<C, Error>> + Send + 'static,
 {
     type Upgrade = DebugConnectionUpgrade<C>;
+
+    fn connection_type(&self) -> ConnectionType {
+        self.recorder.get_ref().connection_type()
+    }
 
     fn upgrade(self) -> Result<Self::Upgrade, Error> {
         let upgrade = self.recorder.into_inner().upgrade()?;

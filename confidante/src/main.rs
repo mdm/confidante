@@ -4,9 +4,11 @@ use confidante_backend::settings::Settings;
 use confidante_backend::store::{SqliteStoreBackend, StoreHandle};
 use confidante_core::xml::stream_parser::rusty_xml::RustyXmlStreamParser;
 use confidante_core::xmpp::jid::Jid;
+use confidante_core::xmpp::stream::ConnectionType;
 use confidante_inbound::connection::debug::DebugConnection;
 use confidante_inbound::connection::tcp::TcpConnection;
-use confidante_inbound::{ConnectionType, InboundStreamSettings};
+use confidante_inbound::starttls::StarttlsNegotiator;
+use confidante_inbound::{FeatureNegotiator, InboundStreamSettings};
 use confidante_inbound::{
     InboundStream,
     sasl::{StoredPassword, StoredPasswordArgon2, StoredPasswordScram},
@@ -71,18 +73,29 @@ async fn main() -> Result<(), Error> {
                 let store = store.clone();
 
                 tokio::spawn(async move {
-                    let connection =
-                        TcpConnection::new(connection, settings.tls.server_config.clone(), true);
+                    let connection = TcpConnection::new(
+                        connection,
+                        ConnectionType::Client,
+                        settings.tls.server_config.clone(),
+                        true,
+                    );
                     let connection = DebugConnection::try_new(connection).await.unwrap();
                     println!("New connection: {}", connection.uuid());
 
+                    let starttls: Box<
+                        dyn FeatureNegotiator<_, RustyXmlStreamParser<_>> + Send + Sync,
+                    > = Box::new(StarttlsNegotiator::new());
+                    let negotiable_features = vec![starttls];
+
                     let settings = InboundStreamSettings {
-                        connection_type: ConnectionType::Client,
                         domain: settings.domain.clone(),
-                        tls_required: settings.tls.required_for_clients,
                     };
                     let mut stream = InboundStream::<_, RustyXmlStreamParser<_>, _>::new(
-                        connection, router, store, settings,
+                        connection,
+                        router,
+                        store,
+                        negotiable_features,
+                        settings,
                     );
                     stream.handle().await;
                 });

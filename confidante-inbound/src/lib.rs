@@ -1,9 +1,6 @@
 use std::collections::HashSet;
-use std::pin::Pin;
 
 use anyhow::{Error, anyhow, bail};
-use argon2::Block;
-use base64::write;
 use sasl::StoredPasswordLookup;
 use tokio::io::ReadHalf;
 use tokio::select;
@@ -15,31 +12,21 @@ use confidante_core::xml::stream_parser::StreamParser;
 use confidante_core::xml::{Element, stream_parser::Frame};
 use confidante_core::xmpp::jid::Jid;
 use confidante_core::xmpp::stanza::Stanza;
-use confidante_core::xmpp::stream::Connection;
 use confidante_core::xmpp::stream::StreamError;
 use confidante_core::xmpp::stream::StreamId;
 use confidante_core::xmpp::stream::XmppStream;
+use confidante_core::xmpp::stream::{Connection, ConnectionType};
 use confidante_core::xmpp::stream_header::LanguageTag;
 use confidante_core::xmpp::stream_header::StreamHeader;
 use confidante_services::router::ManagementCommand;
 use confidante_services::router::RouterHandle;
 
-use self::sasl::SaslNegotiator;
-use bind::ResourceBindingNegotiator;
-use starttls::StarttlsNegotiator;
-
-mod bind;
+pub mod bind;
 pub mod connection;
 pub mod sasl;
-mod starttls;
+pub mod starttls;
 
 const STANZA_CHANNEL_BUFFER_SIZE: usize = 8;
-
-#[derive(Clone, Copy)]
-pub enum ConnectionType {
-    Client,
-    Server,
-}
 
 #[derive(Debug, Clone, Copy, Hash, Eq, PartialEq)]
 enum StreamFeature {
@@ -53,7 +40,6 @@ struct StreamInfo {
     jid: Option<Jid>,
     peer_jid: Option<Jid>,
     peer_language: Option<LanguageTag>,
-    connection_type: Option<ConnectionType>,
     features: HashSet<StreamFeature>,
 }
 
@@ -64,16 +50,13 @@ impl Default for StreamInfo {
             jid: None,
             peer_jid: None,
             peer_language: None,
-            connection_type: None,
             features: HashSet::new(),
         }
     }
 }
 
 pub struct InboundStreamSettings {
-    pub connection_type: ConnectionType,
     pub domain: Jid,
-    pub tls_required: bool,
 }
 
 pub struct InboundStream<C, P, S>
@@ -88,6 +71,7 @@ where
     stanza_tx: Sender<Stanza>,
     stanza_rx: Receiver<Stanza>,
     store: S,
+    negotiable_features: Vec<Box<dyn FeatureNegotiator<C, P> + Send + Sync>>,
     settings: InboundStreamSettings,
 }
 
@@ -101,10 +85,14 @@ where
         connection: C,
         router: RouterHandle,
         store: S,
+        negotiable_features: Vec<Box<dyn FeatureNegotiator<C, P> + Send + Sync>>,
         settings: InboundStreamSettings,
     ) -> Self {
         let stream = XmppStream::new(connection);
-        let info = StreamInfo::default();
+        let mut info = StreamInfo::default();
+        if stream.is_secure() {
+            info.features.insert(StreamFeature::Tls);
+        }
         let (stanza_tx, stanza_rx) = mpsc::channel(STANZA_CHANNEL_BUFFER_SIZE);
 
         InboundStream {
@@ -114,6 +102,7 @@ where
             stanza_tx,
             stanza_rx,
             store,
+            negotiable_features,
             settings,
         }
     }
@@ -151,7 +140,7 @@ where
     }
 
     async fn process_element(&mut self, element: Element) -> Result<(), Error> {
-        for feature in self.negotiable_features() {
+        for feature in &self.negotiable_features {
             if let Ok(true) = dbg!(
                 feature
                     .negotiate_feature(&element, &mut self.stream, &mut self.info)
@@ -177,35 +166,6 @@ where
             .map_err(|_| anyhow!("failed to route stanza"))
     }
 
-    fn negotiable_features(&self) -> Vec<Box<dyn FeatureNegotiator<C, P> + Send>> {
-        let mut features: Vec<Box<dyn FeatureNegotiator<C, P> + Send>> = vec![];
-
-        // TODO: hold on to these throughout negotiation
-        // TODO: move logic into negotiators?
-
-        if self.stream.is_starttls_allowed() && !self.info.features.contains(&StreamFeature::Tls) {
-            features.push(Box::new(StarttlsNegotiator::new()));
-        }
-
-        if (!self.settings.tls_required || self.info.features.contains(&StreamFeature::Tls))
-            && !self.info.features.contains(&StreamFeature::Authentication)
-        {
-            features.push(Box::new(SaslNegotiator::new(self.store.clone())));
-        }
-
-        if let Some(ConnectionType::Client) = self.info.connection_type
-            && self.info.features.contains(&StreamFeature::Authentication)
-            && !self.info.features.contains(&StreamFeature::ResourceBinding)
-        {
-            features.push(Box::new(ResourceBindingNegotiator::new(
-                self.router.management.clone(),
-                self.stanza_tx.clone(),
-            )));
-        }
-
-        features
-    }
-
     async fn register_peer_jid(&mut self, peer_jid: Option<Jid>) {
         if let Some(entity) = self.info.peer_jid.take() {
             self.router
@@ -227,15 +187,12 @@ where
     }
 
     async fn advertise_features(&mut self) -> Result<(), Error> {
-        let negotiable_features = self.negotiable_features();
-
-        if negotiable_features.is_empty() {
-            return Ok(());
-        }
-
         let mut features = Element::new("features", Some(namespaces::XMPP_STREAMS));
-        for feature in negotiable_features {
-            features.add_child(feature.advertise_feature(&self.info));
+
+        for feature in &self.negotiable_features {
+            if let Some(advertised_feature) = feature.advertise_feature(&self.info) {
+                features.add_child(advertised_feature);
+            }
         }
 
         self.stream.writer().write_xml_element(&features).await
@@ -263,11 +220,10 @@ where
         };
 
         self.info.jid = inbound_header.to; // TODO: make sure this only contains the domain part
-        if let ConnectionType::Client = self.settings.connection_type {
-            self.info.peer_jid = self.info.jid.clone();
+        if let ConnectionType::Client = self.stream.connection_type() {
+            self.info.peer_jid = self.info.jid.clone(); // TODO: why is this correct? what is the difference between jid and peer_jid?
         }
         self.info.peer_language = inbound_header.language;
-        self.info.connection_type = Some(self.settings.connection_type);
 
         self.send_stream_header(self.info.peer_jid.clone()).await
     }
@@ -308,12 +264,12 @@ where
 }
 
 #[async_trait::async_trait]
-trait FeatureNegotiator<C, P>
+pub trait FeatureNegotiator<C, P>
 where
     C: Connection + Send,
     P: StreamParser<ReadHalf<C>> + Send,
 {
-    fn advertise_feature(&self, info: &StreamInfo) -> Element;
+    fn advertise_feature(&self, info: &StreamInfo) -> Option<Element>;
     async fn negotiate_feature(
         &self,
         element: &Element,
@@ -321,4 +277,87 @@ where
         info: &mut StreamInfo,
     ) -> Result<bool, StreamError>;
     fn requires_restart(&self) -> bool;
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt, duplex},
+        spawn,
+    };
+
+    use confidante_core::{
+        xml::stream_parser::rusty_xml::RustyXmlStreamParser,
+        xmpp::stream::{ConnectionType, fake::FakeConnection},
+    };
+    use sasl::StoredPasswordLookup;
+
+    use super::*;
+
+    // TODO: move to sasl module?
+    #[derive(Debug, Clone)]
+    struct FakeStoredPasswordLookup;
+
+    impl StoredPasswordLookup for FakeStoredPasswordLookup {
+        async fn get_stored_password_argon2(&self, _jid: Jid) -> Result<String, anyhow::Error> {
+            Ok("".to_string())
+        }
+
+        async fn get_stored_password_scram_sha1(&self, _jid: Jid) -> Result<String, anyhow::Error> {
+            Ok("".to_string())
+        }
+
+        async fn get_stored_password_scram_sha256(
+            &self,
+            _jid: Jid,
+        ) -> Result<String, anyhow::Error> {
+            Ok("".to_string())
+        }
+    }
+
+    #[tokio::test]
+    async fn stream_features_empty_if_no_feature_is_provided() {
+        let (mut client, server) = duplex(1000);
+        let connection = FakeConnection::new(server, ConnectionType::Client);
+        let mut stream = InboundStream::<_, RustyXmlStreamParser<_>, _>::new(
+            connection,
+            RouterHandle::default(),
+            FakeStoredPasswordLookup,
+            Vec::new(),
+            InboundStreamSettings {
+                domain: Jid::new(None, "example.com".to_string(), None),
+            },
+        );
+
+        spawn(async move { stream.handle().await });
+        client.write_all(b"<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:client' to='example.com'></stream:stream>").await.unwrap();
+        let mut buffer = String::new();
+        client.read_to_string(&mut buffer).await.unwrap();
+
+        assert!(buffer.contains("<stream:features/>"));
+    }
+
+    #[tokio::test]
+    async fn stream_features_not_empty_if_a_feature_is_provided() {
+        let (mut client, server) = duplex(1000);
+        let connection = FakeConnection::new(server, ConnectionType::Client);
+        let starttls: Box<dyn FeatureNegotiator<_, RustyXmlStreamParser<_>> + Send + Sync> =
+            Box::new(starttls::StarttlsNegotiator::new());
+        let mut stream = InboundStream::<_, RustyXmlStreamParser<_>, _>::new(
+            connection,
+            RouterHandle::default(),
+            FakeStoredPasswordLookup,
+            vec![starttls],
+            InboundStreamSettings {
+                domain: Jid::new(None, "example.com".to_string(), None),
+            },
+        );
+
+        spawn(async move { stream.handle().await });
+        client.write_all(b"<stream:stream xmlns:stream='http://etherx.jabber.org/streams' xmlns='jabber:client' to='example.com'></stream:stream>").await.unwrap();
+        let mut buffer = String::new();
+        client.read_to_string(&mut buffer).await.unwrap();
+
+        assert!(buffer.contains("starttls"));
+    }
 }

@@ -35,11 +35,11 @@ where
     C: Connection + Send,
     P: StreamParser<ReadHalf<C>> + Send,
 {
-    fn advertise_feature(&self, info: &StreamInfo) -> Element {
+    fn advertise_feature(&self, info: &StreamInfo) -> Option<Element> {
         let mut bind = Element::new("bind", Some(namespaces::XMPP_BIND));
         bind.set_attribute("xmlns", None::<String>, namespaces::XMPP_BIND);
 
-        bind
+        Some(bind)
     }
 
     async fn negotiate_feature(

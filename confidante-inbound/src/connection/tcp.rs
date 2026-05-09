@@ -8,7 +8,7 @@ use tokio::{
 };
 use tokio_rustls::{Accept, TlsAcceptor, rustls::ServerConfig, server::TlsStream};
 
-use confidante_core::xmpp::stream::Connection;
+use confidante_core::xmpp::stream::{Connection, ConnectionType};
 
 #[allow(clippy::large_enum_variant)]
 enum Socket {
@@ -18,16 +18,23 @@ enum Socket {
 
 pub struct TcpConnection {
     socket: Socket,
+    connection_type: ConnectionType,
     tls_server_config: Option<Arc<ServerConfig>>,
     starttls_allowed: bool,
 }
 
 impl TcpConnection {
-    pub fn new(socket: TcpStream, tls_config: Arc<ServerConfig>, starttls_allowed: bool) -> Self {
+    pub fn new(
+        socket: TcpStream,
+        connection_type: ConnectionType,
+        tls_config: Arc<ServerConfig>,
+        starttls_allowed: bool,
+    ) -> Self {
         let socket = Socket::Plain(socket);
 
         TcpConnection {
             socket,
+            connection_type,
             tls_server_config: Some(tls_config),
             starttls_allowed,
         }
@@ -37,6 +44,10 @@ impl TcpConnection {
 impl Connection for TcpConnection {
     type Upgrade = TcpConnectionUpgrade;
 
+    fn connection_type(&self) -> ConnectionType {
+        self.connection_type
+    }
+
     fn upgrade(self) -> Result<Self::Upgrade, Error> {
         match self.socket {
             Socket::Plain(socket) => {
@@ -45,7 +56,10 @@ impl Connection for TcpConnection {
                     .ok_or_else(|| anyhow!("TLS config not set"))?;
                 let accept = TlsAcceptor::from(tls_config).accept(socket);
 
-                Ok(TcpConnectionUpgrade { accept })
+                Ok(TcpConnectionUpgrade {
+                    accept,
+                    connection_type: self.connection_type,
+                })
             }
             Socket::Tls(_) => Err(anyhow!("Connection is already secure")),
         }
@@ -115,6 +129,7 @@ impl AsyncWrite for TcpConnection {
 
 pub struct TcpConnectionUpgrade {
     accept: Accept<TcpStream>,
+    connection_type: ConnectionType,
 }
 
 impl Future for TcpConnectionUpgrade {
@@ -127,6 +142,7 @@ impl Future for TcpConnectionUpgrade {
         let tls_stream = ready!(Pin::new(&mut self.accept).poll(cx))?;
         let connection = TcpConnection {
             socket: Socket::Tls(tls_stream),
+            connection_type: self.connection_type,
             tls_server_config: None,
             starttls_allowed: false,
         };

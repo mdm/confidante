@@ -143,7 +143,7 @@ where
     P: StreamParser<ReadHalf<C>> + Send,
     S: StoredPasswordLookup + Send + Sync,
 {
-    fn advertise_feature(&self, info: &StreamInfo) -> Element {
+    fn advertise_feature(&self, info: &StreamInfo) -> Option<Element> {
         let mut mechanisms = Element::new("mechanisms", Some(namespaces::XMPP_SASL));
 
         // TODO: make mechanisms available based on configured policy
@@ -152,7 +152,7 @@ where
 
         mechanisms.set_attribute("xmlns", None::<String>, namespaces::XMPP_SASL);
 
-        mechanisms
+        Some(mechanisms)
     }
 
     async fn negotiate_feature(

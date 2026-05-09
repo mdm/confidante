@@ -7,6 +7,8 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadHalf, WriteHalf, split};
 
 use crate::xml::{stream_parser::StreamParser, stream_writer::StreamWriter};
 
+pub mod fake;
+
 #[derive(Debug, Clone)]
 pub struct StreamId(String);
 
@@ -37,11 +39,18 @@ impl Display for StreamId {
     }
 }
 
+#[derive(Clone, Copy)]
+pub enum ConnectionType {
+    Client,
+    Server,
+}
+
 pub trait Connection: AsyncRead + AsyncWrite + Unpin + Sized {
     type Upgrade: Future<Output = Result<Self, Error>> + Send + 'static;
 
+    fn connection_type(&self) -> ConnectionType;
     fn upgrade(self) -> Result<Self::Upgrade, Error>;
-    fn is_starttls_allowed(&self) -> bool;
+    fn is_starttls_allowed(&self) -> bool; // TODO: deny upgrade with proper error instead
     fn is_secure(&self) -> bool;
     fn is_authenticated(&self) -> bool;
 }
@@ -51,6 +60,7 @@ where
     C: Connection,
     P: StreamParser<ReadHalf<C>>,
 {
+    connection_type: ConnectionType,
     starttls_allowed: bool,
     secure: bool,
     authenticated: bool,
@@ -64,6 +74,7 @@ where
     P: StreamParser<ReadHalf<C>>,
 {
     pub fn new(connection: C) -> Self {
+        let connection_type = connection.connection_type();
         let starttls_allowed = connection.is_starttls_allowed();
         let secure = connection.is_secure();
         let authenticated = connection.is_authenticated();
@@ -72,6 +83,7 @@ where
         let writer = Some(StreamWriter::new(writer));
 
         Self {
+            connection_type,
             starttls_allowed,
             secure,
             authenticated,
@@ -85,6 +97,10 @@ where
         let writer = self.writer.take().unwrap().into_inner();
         self.reader = Some(P::new(reader));
         self.writer = Some(StreamWriter::new(writer));
+    }
+
+    pub fn connection_type(&self) -> ConnectionType {
+        self.connection_type
     }
 
     pub fn is_starttls_allowed(&self) -> bool {
@@ -229,6 +245,10 @@ mod tests {
 
     impl Connection for DummyConnection {
         type Upgrade = std::future::Ready<Result<Self, Error>>;
+
+        fn connection_type(&self) -> ConnectionType {
+            ConnectionType::Client
+        }
 
         fn upgrade(mut self) -> Result<Self::Upgrade, Error> {
             self.secure = true;
